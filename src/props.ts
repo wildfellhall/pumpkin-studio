@@ -229,29 +229,33 @@ export function createTool(type: Tool, color = '#e7cba4', cutter: Stamp = 'trian
   return group;
 }
 
+/** Thin ragged membranes follow a branching core; fibers and seeds share its attachment points. */
 function tissueRibbon(curve: THREE.CatmullRomCurve3, width: number, phase: number) {
   const positions: number[] = [],
     uvs: number[] = [],
+    colors: number[] = [],
     indices: number[] = [];
-  const rows = 30,
-    columns = 5;
+  const rows = 36,
+    columns = 8;
   for (let i = 0; i <= rows; i++) {
     const t = i / rows,
       p = curve.getPoint(t),
       tangent = curve.getTangent(t);
     const side = new THREE.Vector3(0.3, 0, 1).cross(tangent).normalize();
     const normal = side.clone().cross(tangent).normalize();
-    const taper = Math.pow(Math.sin(Math.PI * (0.035 + t * 0.93)), 0.6);
+    const taper = Math.pow(Math.sin(Math.PI * (0.025 + t * 0.95)), 0.6);
     for (let j = 0; j <= columns; j++) {
-      const w = (j / columns - 0.5) * 2,
-        edge = 1 + 0.13 * Math.sin(t * 31 + phase) + 0.07 * Math.sin(t * 77);
-      const fold = Math.sin(w * 4 + t * 13 + phase) * width * 0.28;
+      const w = (j / columns - 0.5) * 2;
+      const edge = 1 + 0.22 * Math.sin(t * 31 + phase) + 0.12 * Math.sin(t * 73 + phase);
+      const fold = Math.sin(w * 3.5 + t * 8 + phase) * width * 0.15;
       const vertex = p
         .clone()
         .addScaledVector(side, w * width * taper * edge)
         .addScaledVector(normal, fold);
       positions.push(vertex.x, vertex.y, vertex.z);
       uvs.push(j / columns, t);
+      const shade = 0.92 + 0.06 * Math.sin(t * 12 + phase) + 0.02 * Math.cos(w * 5 + t * 19);
+      colors.push(1, shade, 0.52 + shade * 0.35);
       if (i < rows && j < columns) {
         const a = i * (columns + 1) + j,
           b = a + columns + 1;
@@ -262,7 +266,25 @@ function tissueRibbon(curve: THREE.CatmullRomCurve3, width: number, phase: numbe
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
   geo.setIndex(indices);
+  geo.computeVertexNormals();
+  return geo;
+}
+function tissueCord(curve: THREE.CatmullRomCurve3, radius: number, phase: number) {
+  const geo = new THREE.TubeGeometry(curve, 24, radius, 7, false),
+    positions = geo.attributes.position;
+  for (let i = 0; i < positions.count; i++) {
+    const t = Math.floor(i / 8) / 24,
+      center = curve.getPointAt(t);
+    const v = new THREE.Vector3().fromBufferAttribute(positions, i);
+    const taper = 0.3 + 0.7 * Math.pow(Math.sin(Math.PI * (0.04 + t * 0.92)), 0.55);
+    const uneven = 1 + 0.15 * Math.sin(t * 37 + phase) + 0.1 * Math.sin(i * 1.8 + phase);
+    v.sub(center)
+      .multiplyScalar(taper * uneven)
+      .add(center);
+    positions.setXYZ(i, v.x, v.y, v.z);
+  }
   geo.computeVertexNormals();
   return geo;
 }
@@ -271,56 +293,52 @@ export function createGuts(shape: PumpkinShape) {
   const group = new THREE.Group(),
     random = rng(71),
     tissue = tissueTexture();
-  const time = { value: 0 };
-  group.userData.time = time;
   const pulpMat = new THREE.MeshPhysicalMaterial({
-    color: '#dc871f',
+    color: '#f29b27',
     map: tissue,
     bumpMap: tissue,
-    bumpScale: 0.012,
-    roughness: 0.38,
-    clearcoat: 0.8,
-    clearcoatRoughness: 0.17,
-    transmission: 0.14,
-    thickness: 0.025,
+    bumpScale: 0.006,
+    roughness: 0.56,
+    roughnessMap: tissue,
+    clearcoat: 0.75,
+    clearcoatRoughness: 0.2,
+    transmission: 0.12,
+    thickness: 0.035,
+    attenuationColor: '#d87912',
+    attenuationDistance: 0.3,
     ior: 1.36,
     side: THREE.DoubleSide,
+    vertexColors: true,
   });
   const fiberMat = new THREE.MeshPhysicalMaterial({
-    color: '#e3a331',
-    roughness: 0.38,
-    clearcoat: 0.75,
+    color: '#e59a2a',
+    map: tissue,
+    bumpMap: tissue,
+    bumpScale: 0.004,
+    roughness: 0.4,
+    clearcoat: 0.9,
     clearcoatRoughness: 0.19,
   });
   const seedMat = new THREE.MeshPhysicalMaterial({
-    color: '#dfc599',
-    map: tissue,
-    roughness: 0.44,
-    clearcoat: 0.38,
-    clearcoatRoughness: 0.23,
+    color: '#e9d6ab',
+    roughness: 0.3,
+    clearcoat: 0.9,
+    clearcoatRoughness: 0.1,
   });
-  const seamMat = new THREE.MeshStandardMaterial({ color: '#c9a974', roughness: 0.6 });
+  const seamMat = new THREE.MeshPhysicalMaterial({
+    color: '#bda06b',
+    roughness: 0.35,
+    clearcoat: 0.6,
+  });
   const liquidMat = new THREE.MeshPhysicalMaterial({
-    color: '#d88b29',
-    roughness: 0.09,
+    color: '#eda22b',
+    roughness: 0.07,
     clearcoat: 1,
-    clearcoatRoughness: 0.05,
-    transmission: 0.42,
-    thickness: 0.02,
+    clearcoatRoughness: 0.04,
+    transmission: 0.65,
+    thickness: 0.035,
     ior: 1.34,
   });
-  // Slight movement of the thin tissue, rather than rigid glossy spheres.
-  for (const mat of [pulpMat, fiberMat]) {
-    mat.onBeforeCompile = (shader) => {
-      shader.uniforms.pulpTime = time;
-      shader.vertexShader = 'uniform float pulpTime;\n' + shader.vertexShader;
-      shader.vertexShader = shader.vertexShader.replace(
-        '#include <begin_vertex>',
-        '#include <begin_vertex>\ntransformed.x += sin(position.y*19.0 + pulpTime*1.5 + position.z*8.0)*0.0025;',
-      );
-    };
-    mat.customProgramCacheKey = () => 'hollow-fibrous-pulp-v2';
-  }
   const addMerged = (geos: THREE.BufferGeometry[], mat: THREE.Material, parent: THREE.Group) => {
     const merged = mergeGeometries(geos, false);
     if (merged) mesh(merged, mat, parent);
@@ -328,105 +346,109 @@ export function createGuts(shape: PumpkinShape) {
   };
   for (let k = 0; k < 6; k++) {
     const clump = new THREE.Group(),
-      a = (k / 6) * Math.PI * 2;
-    const center = new THREE.Vector3(
-      Math.sin(a) * shape.radius * 0.43,
-      shape.height + 0.16 + random() * 0.12,
-      Math.cos(a) * shape.radius * 0.43,
-    );
+      u = k / 6;
+    const center = surfacePoint(shape, u, 0.53, 0.49);
     clump.position.copy(center);
     const ribbons: THREE.BufferGeometry[] = [],
       fibers: THREE.BufferGeometry[] = [],
       seeds: THREE.BufferGeometry[] = [],
       seams: THREE.BufferGeometry[] = [];
-    const anchors: THREE.Vector3[] = [];
-    for (let i = 0; i < 14; i++) {
-      const start = new THREE.Vector3(
-        (random() - 0.5) * 0.55,
-        (random() - 0.5) * 0.17,
-        (random() - 0.5) * 0.48,
+    const branches: THREE.CatmullRomCurve3[] = [];
+    const localWall = (du: number, v: number, depth: number) =>
+      surfacePoint(shape, u + du, v, depth).sub(center);
+    // Broad placental tissue starts against the inner wall and folds inward under its own weight.
+    for (let i = 0; i < 18; i++) {
+      const du = (random() - 0.5) * 0.12,
+        top = 0.49 + random() * 0.23;
+      const start = localWall(du, top, 0.14 + random() * 0.035);
+      const end = localWall(
+        du + (random() - 0.5) * 0.1,
+        top - 0.025 - random() * 0.065,
+        0.65 + random() * 0.3,
       );
-      const end = start
-        .clone()
-        .add(
-          new THREE.Vector3(
-            (random() - 0.5) * 0.5,
-            -0.13 - random() * 0.45,
-            (random() - 0.5) * 0.4,
-          ),
-        );
-      anchors.push(start, end);
+      const curl = new THREE.Vector3(
+        (random() - 0.5) * 0.22,
+        -0.08 - random() * 0.12,
+        (random() - 0.5) * 0.22,
+      );
+      const mid = start.clone().lerp(end, 0.5).add(curl);
       const curve = new THREE.CatmullRomCurve3([
         start,
-        start
-          .clone()
-          .add(new THREE.Vector3((random() - 0.5) * 0.32, -0.07, (random() - 0.5) * 0.3)),
-        end.clone().add(new THREE.Vector3(0.06, 0.1, -0.08)),
-        end,
-      ]);
-      ribbons.push(tissueRibbon(curve, 0.018 + random() * 0.045, random() * 6));
-    }
-    for (let i = 0; i < 52; i++) {
-      const start = anchors[Math.floor(random() * anchors.length)].clone(),
-        end = anchors[Math.floor(random() * anchors.length)].clone();
-      if (start.distanceTo(end) < 0.04) end.y -= 0.25;
-      const mid = start
-        .clone()
-        .lerp(end, 0.5)
-        .add(
-          new THREE.Vector3(
-            (random() - 0.5) * 0.13,
-            -0.045 - random() * 0.09,
-            (random() - 0.5) * 0.12,
-          ),
-        );
-      const curve = new THREE.CatmullRomCurve3([
-        start,
-        start
-          .clone()
-          .lerp(mid, 0.6)
-          .add(new THREE.Vector3(0.03, 0, -0.02)),
+        start.clone().lerp(mid, 0.45),
         mid,
+        mid
+          .clone()
+          .lerp(end, 0.6)
+          .add(new THREE.Vector3(-curl.x * 0.6, 0.02, -curl.z * 0.6)),
         end,
       ]);
-      fibers.push(new THREE.TubeGeometry(curve, 14, 0.0028 + random() * 0.004, 5, false));
+      branches.push(curve);
+      const membrane = new THREE.CatmullRomCurve3(
+        [0.26, 0.46, 0.66, 0.86, 0.98].map((t) => curve.getPoint(t)),
+      );
+      ribbons.push(tissueRibbon(membrane, 0.055 + random() * 0.05, random() * 6));
+      fibers.push(tissueCord(curve, 0.007 + random() * 0.014, random() * 6));
+      // Finer fibers cling to the wet membrane; a few bridge neighboring folds.
+      for (let j = 0; j < 3; j++) {
+        const t = 0.15 + random() * 0.35,
+          a = curve.getPoint(t),
+          b = curve.getPoint(0.65 + random() * 0.3);
+        const curl = new THREE.Vector3((random() - 0.5) * 0.08, -0.015, (random() - 0.5) * 0.08);
+        const fine = new THREE.CatmullRomCurve3([
+          a,
+          a.clone().lerp(b, 0.35).add(curl),
+          a.clone().lerp(b, 0.7).addScaledVector(curl, 0.6),
+          b,
+        ]);
+        fibers.push(tissueCord(fine, 0.002 + random() * 0.0035, random() * 6));
+      }
     }
     const dummy = new THREE.Object3D();
-    for (let i = 0; i < 11; i++) {
-      const seedGeo = new THREE.SphereGeometry(0.056, 18, 12),
+    for (let i = 0; i < 15; i++) {
+      const branch = branches[(i * 2) % branches.length],
+        t = 0.35 + random() * 0.5;
+      const location = branch.getPoint(t);
+      location.y += 0.055;
+      const seedGeo = new THREE.SphereGeometry(0.07, 20, 14),
         positions = seedGeo.attributes.position;
       for (let j = 0; j < positions.count; j++) {
         const z = positions.getZ(j),
-          taper = 1 - 0.23 * (z / 0.056);
-        positions.setXYZ(j, positions.getX(j) * 0.68 * taper, positions.getY(j) * 0.17, z * 1.36);
+          taper = 1 - 0.26 * (z / 0.07);
+        positions.setXYZ(j, positions.getX(j) * 0.68 * taper, positions.getY(j) * 0.145, z * 1.4);
       }
       seedGeo.computeVertexNormals();
-      const location = anchors[(i * 2) % anchors.length].clone();
-      location.y += 0.025;
       dummy.position.copy(location);
-      dummy.rotation.set((random() - 0.5) * 1.7, random() * 6, (random() - 0.5) * 1.3);
-      dummy.scale.setScalar(0.8 + random() * 0.5);
+      dummy.rotation.set((random() - 0.5) * 1.3, random() * 6, (random() - 0.5) * 1.1);
+      dummy.scale.setScalar(0.8 + random() * 0.3);
       dummy.updateMatrix();
       seedGeo.applyMatrix4(dummy.matrix);
       seeds.push(seedGeo);
       const outline = Array.from({ length: 33 }, (_, j) => {
-        const t = (j / 32) * Math.PI * 2,
-          z = Math.cos(t) * 0.056;
+        const theta = (j / 32) * Math.PI * 2,
+          z = Math.cos(theta) * 0.07;
         return new THREE.Vector3(
-          Math.sin(t) * 0.056 * 0.68 * (1 - (0.23 * z) / 0.056),
+          Math.sin(theta) * 0.07 * 0.68 * (1 - (0.26 * z) / 0.07),
           0,
-          z * 1.36,
+          z * 1.4,
         );
       });
       const seam = new THREE.TubeGeometry(
         new THREE.CatmullRomCurve3(outline, true),
         32,
-        0.0017,
+        0.0014,
         4,
         true,
       );
       seam.applyMatrix4(dummy.matrix);
       seams.push(seam);
+      // A translucent fleshy sheath partly covers each seed instead of seeds sitting loose on top.
+      const wrap = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(-0.024, 0.009, -0.07).applyMatrix4(dummy.matrix),
+        new THREE.Vector3(0.008, 0.014, -0.015).applyMatrix4(dummy.matrix),
+        new THREE.Vector3(0.022, 0.01, 0.07).applyMatrix4(dummy.matrix),
+        branch.getPoint(Math.min(0.98, t + 0.1)),
+      ]);
+      ribbons.push(tissueRibbon(wrap, 0.004 + random() * 0.006, random() * 6));
     }
     addMerged(ribbons, pulpMat, clump);
     addMerged(fibers, fiberMat, clump);
@@ -434,14 +456,14 @@ export function createGuts(shape: PumpkinShape) {
     addMerged(seams, seamMat, clump);
     const drips = new THREE.Group();
     drips.name = 'drips';
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 7; i++) {
       const drop = mesh(
-        new THREE.SphereGeometry(0.015 + random() * 0.008, 10, 8),
+        new THREE.SphereGeometry(0.01 + random() * 0.008, 12, 10),
         liquidMat,
         drips,
-        [(random() - 0.5) * 0.35, -0.15 - random() * 0.3, (random() - 0.5) * 0.25],
+        [(random() - 0.5) * 0.3, -0.2 - random() * 0.2, (random() - 0.5) * 0.3],
       );
-      drop.scale.set(0.7, 1.6, 0.7);
+      drop.scale.set(0.7, 1.4, 0.7);
       drop.userData.start = drop.position.clone();
       drop.userData.phase = random();
     }
@@ -450,8 +472,8 @@ export function createGuts(shape: PumpkinShape) {
     clump.userData.home = center.clone();
     clump.userData.index = k;
     clump.userData.pile = new THREE.Vector3(
-      -1.45 + Math.sin(k * 2.5) * 0.26,
-      0.3 + Math.floor(k / 3) * 0.07,
+      -1.45 + Math.sin(k * 2.5) * 0.25,
+      0.31 + Math.floor(k / 3) * 0.07,
       1.1 + Math.cos(k * 2.5) * 0.23,
     );
     group.add(clump);

@@ -364,7 +364,10 @@ export class StudioEngine {
     this.guts.children.forEach((clump, i) => {
       const removed = i < this.currentProject.scoops;
       if (i === this.scoopIndex && this.time - this.scoopStart < 2) return;
-      clump.visible = !removed || this.settings.stage === 'prepare';
+      clump.visible =
+        !removed ||
+        (this.settings.mode === 'guided' && this.settings.stage === 'prepare') ||
+        this.currentProject.lidOpen;
       clump.position.copy(removed ? clump.userData.pile : clump.userData.home);
       clump.scale.set(removed ? 0.55 : 1, removed ? 0.3 : 1, removed ? 0.55 : 1);
       clump.rotation.z = removed ? -0.2 : 0;
@@ -499,7 +502,10 @@ export class StudioEngine {
         }
         this.updateGuts();
       }
-      if (project.lidOpen !== previous.lidOpen) this.updateLid();
+      if (project.lidOpen !== previous.lidOpen) {
+        this.updateLid();
+        this.updateGuts();
+      }
     }
   }
   setSettings(settings: StudioSettings) {
@@ -521,11 +527,12 @@ export class StudioEngine {
       settings.tool === 'orbit' ? THREE.TOUCH.ROTATE : (null as unknown as THREE.TOUCH);
     this.renderer.domElement.style.cursor = settings.tool === 'orbit' ? 'grab' : 'crosshair';
     this.tool.visible = settings.toolVisible;
-    if (settings.stage !== old.stage) {
+    if (settings.stage !== old.stage || settings.mode !== old.mode) {
       this.updateGuts();
-      if (settings.stage === 'prepare') this.resetView('top');
-      if (settings.stage === 'carve') this.resetView('front');
-      if (settings.stage === 'light') this.resetView('front');
+      if (settings.mode === 'guided') {
+        if (settings.stage === 'prepare') this.resetView('top');
+        if (settings.stage === 'carve' || settings.stage === 'light') this.resetView('front');
+      }
     }
   }
   private setEnvironment(environment: 'day' | 'night') {
@@ -545,7 +552,7 @@ export class StudioEngine {
   }
   resetView(view: 'front' | 'top' = 'front') {
     this.root.rotation.y = 0;
-    this.camera.position.copy(view === 'top' ? new THREE.Vector3(0, 6.4, 5.4) : front);
+    this.camera.position.copy(view === 'top' ? new THREE.Vector3(0, 7.2, 3.8) : front);
     this.controls.target.set(0, this.currentShape.height * 0.8, 0);
     this.controls.update();
   }
@@ -611,7 +618,8 @@ export class StudioEngine {
         p.opened = true;
         p.lidOpen = true;
         this.callbacks.change(p, 'Opened the lid');
-        this.callbacks.info('Lid lifted. Select the scoop and drag upward to pull out the pulp.');
+        if (this.settings.mode === 'guided')
+          this.callbacks.info('Lid lifted. Select the scoop and drag upward to pull out the pulp.');
       } else
         this.callbacks.info('The lid is already cut. Use “Lift lid” or “Replace lid” to move it.');
       this.clearGesture();
@@ -624,7 +632,7 @@ export class StudioEngine {
         return;
       }
       if (this.currentProject.scoops >= SCOOPS_REQUIRED) {
-        this.callbacks.info('All clean. Your pumpkin is ready to carve.');
+        this.callbacks.info('The cavity is empty.');
         this.clearGesture();
         return;
       }
@@ -806,10 +814,9 @@ export class StudioEngine {
   private tick(dt: number) {
     this.time += dt;
     this.guts.visible =
-      this.settings.stage === 'prepare' ||
-      ((this.currentProject.lidOpen || this.currentProject.cuts.length > 0) &&
-        this.currentProject.scoops < SCOOPS_REQUIRED);
-    if (this.guts.userData.time) this.guts.userData.time.value = this.time;
+      (this.settings.mode === 'guided' && this.settings.stage === 'prepare') ||
+      this.currentProject.lidOpen ||
+      (this.currentProject.cuts.length > 0 && this.currentProject.scoops < SCOOPS_REQUIRED);
     if (this.settings.rotating && !this.drawing && !this.exporting)
       this.root.rotation.y += dt * 0.26;
     this.lid.position.lerp(this.lidPosition, Math.min(1, dt * 6));
@@ -851,7 +858,7 @@ export class StudioEngine {
         const settle = THREE.MathUtils.smoothstep(f, 0.65, 1);
         clump.scale.set(
           1 - settle * 0.45,
-          (1 + Math.sin(f * Math.PI) * 0.85) * (1 - settle * 0.7),
+          (1 + Math.sin(f * Math.PI) * 0.35) * (1 - settle * 0.7),
           1 - settle * 0.45,
         );
         clump.rotation.z = -0.2 * f;
@@ -911,6 +918,7 @@ export class StudioEngine {
       environment: this.environment,
       rotating: this.settings.rotating,
       rotation: +this.root.rotation.y.toFixed(2),
+      camera: this.camera.position.toArray().map((v) => +v.toFixed(3)),
       exporting: this.exporting,
       triangles: this.body.geometry.attributes.position.count / 3,
       coordinates:

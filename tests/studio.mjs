@@ -276,8 +276,13 @@ try {
   await click('Start fresh');
   await click('Create new pumpkin');
   await click('Freestyle');
-  await click('Carve & paint');
-  await expectState({ stage: 'carve', mode: 'freestyle', scoops: 0 });
+  await expectState({ stage: 'pick', mode: 'freestyle', scoops: 0, tool: 'cut' });
+  assert.equal(
+    await page.locator('.stepper, .panel-eyebrow, .panel-footer').count(),
+    0,
+    'Freestyle has no sequential controls',
+  );
+  // Carve the untouched pumpkin directly, with no preparation or stage transition.
   await click('Cutters');
   await click('heart cutter');
   await drag([
@@ -286,6 +291,54 @@ try {
   ]);
   await expectState({ cuts: 1 });
   await screenshot('10-freestyle');
+  // Inspectors and tools preserve the camera and selected tool. Lighting can precede gutting.
+  const cameraBefore = (await state()).camera;
+  await page.getByRole('tab', { name: 'Lighting', exact: true }).click();
+  await click('◉ Tealight Low candle flame');
+  await expectState({ light: 'tealight', scoops: 0, stage: 'pick', tool: 'stamp' });
+  assert.deepEqual((await state()).camera, cameraBefore);
+  await page.getByRole('tab', { name: 'Pumpkin', exact: true }).click();
+  await click('Ghost', false);
+  await expectState({ shape: 'ghost', cuts: 1 });
+  await click('Classic', false);
+  await click('Paint');
+  await expectState({ tool: 'paint', stage: 'pick' });
+  assert.equal(
+    await page.getByRole('tab', { name: 'Tools', exact: true }).getAttribute('aria-selected'),
+    'true',
+  );
+  assert.deepEqual((await state()).camera, cameraBefore);
+  // Instant cavity edits are optional, reversible, and do not close the lid or switch tools.
+  await click('Empty cavity');
+  await expectState({ scoops: 6, lidOpen: false, tool: 'paint' });
+  await click('Undo');
+  await expectState({ scoops: 0 });
+  await click('Redo');
+  await expectState({ scoops: 6 });
+  await click('Refill pulp');
+  await expectState({ scoops: 0 });
+  await click('Open lid');
+  await expectState({ lidOpen: true, tool: 'paint' });
+  await click('View inside');
+  await click('Scoop');
+  await click('Pull out a scoop');
+  await expectState({ scoops: 1 });
+  await page.waitForTimeout(700);
+  await screenshot('10a-freestyle-pulp');
+  await click('Empty cavity');
+  await expectState({ scoops: 6, lidOpen: true, tool: 'scoop' });
+  await click('Replace lid');
+  await page.waitForTimeout(700);
+  await page.reload();
+  await page.waitForFunction(() => window.render_game_to_text);
+  await expectState({ mode: 'freestyle', cuts: 1, light: 'tealight', scoops: 6 });
+  assert.equal(await page.locator('.stepper, .panel-eyebrow, .panel-footer').count(), 0);
+  // Guided mode still applies its prerequisite after returning from unrestricted work.
+  await click('Refill pulp');
+  await click('Guided');
+  await click('Carve & paint');
+  await expectState({ stage: 'pick', mode: 'guided', scoops: 0 });
+  await click('Freestyle');
   await click('How it works');
   await page.keyboard.press('Escape');
   assert.equal(await page.getByRole('dialog').count(), 0);
@@ -296,8 +349,8 @@ try {
   assert.ok(
     await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
   );
-  await click('Lighting');
-  await expectState({ stage: 'light' });
+  await page.getByRole('tab', { name: 'Lighting', exact: true }).click();
+  await expectState({ stage: 'pick' });
   await click('◉ Tealight Low candle flame');
   await click('Night');
   await screenshot('12-mobile-night');
@@ -336,7 +389,12 @@ try {
           'export cancellation',
           'autosave reload',
           'project import',
-          'freestyle',
+          'freestyle without steps',
+          'independent tool, lighting and shape controls',
+          'camera preservation',
+          'instant empty/refill undo and redo',
+          'mode persistence',
+          'guided re-entry',
           'modal escape',
           'mobile overflow',
         ],

@@ -50,6 +50,14 @@ import {
 
 const STORAGE_KEY = 'hollow-pumpkin-v1';
 const GALLERY_KEY = 'hollow-gallery-v1';
+const MODE_KEY = 'hollow-mode-v1';
+function loadMode(): StudioSettings['mode'] {
+  try {
+    return localStorage.getItem(MODE_KEY) === 'freestyle' ? 'freestyle' : 'guided';
+  } catch {
+    return 'guided';
+  }
+}
 const STAGES: { id: Stage; title: string; short: string }[] = [
   { id: 'pick', title: 'Pick a pumpkin', short: 'Pick' },
   { id: 'prepare', title: 'Prepare', short: 'Prep' },
@@ -199,7 +207,12 @@ export default function App() {
   const [settings, setSettings] = useState<StudioSettings>(() => ({
     ...DEFAULT_SETTINGS,
     stage: loadProject().stage,
+    mode: loadMode(),
+    tool: loadMode() === 'freestyle' ? 'cut' : 'orbit',
   }));
+  const [freePanel, setFreePanel] = useState<'carve' | 'pick' | 'light'>('carve');
+  const freestyle = settings.mode === 'freestyle';
+  const panel = freestyle ? freePanel : settings.stage;
   const projectRef = useRef(project),
     settingsRef = useRef(settings);
   projectRef.current = project;
@@ -256,7 +269,7 @@ export default function App() {
     setFuture((f) => [current, ...f]);
     setProject(previous);
     setPast(past.slice(0, -1));
-    if (current.stage !== previous.stage)
+    if (settingsRef.current.mode === 'guided' && current.stage !== previous.stage)
       setSettings((s) => ({ ...s, stage: previous.stage, tool: 'orbit' }));
     notify('Undid the last change.');
   }, [notify]);
@@ -268,7 +281,7 @@ export default function App() {
     setPast((p) => [...p, current]);
     setProject(next);
     setFuture(future.slice(1));
-    if (current.stage !== next.stage)
+    if (settingsRef.current.mode === 'guided' && current.stage !== next.stage)
       setSettings((s) => ({ ...s, stage: next.stage, tool: 'orbit' }));
     notify('Redid the change.');
   }, [notify]);
@@ -304,6 +317,13 @@ export default function App() {
   useEffect(() => {
     engineRef.current?.setSettings(settings);
   }, [settings]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(MODE_KEY, settings.mode);
+    } catch {
+      /* Mode remains usable without storage. */
+    }
+  }, [settings.mode]);
   useEffect(() => {
     setSaveStatus('Saving…');
     const timer = setTimeout(() => {
@@ -365,6 +385,11 @@ export default function App() {
     setProject((p) => ({ ...p, stage }));
   };
   const chooseTool = (tool: Tool) => {
+    if (freestyle) {
+      setFreePanel('carve');
+      configure({ tool, rotating: false });
+      return;
+    }
     if (tool === 'knife' || tool === 'scoop') goToStage('prepare');
     else if (settings.stage !== 'carve') {
       if (settings.mode === 'guided' && project.scoops < SCOOPS_REQUIRED) {
@@ -377,7 +402,7 @@ export default function App() {
   };
   const liftLid = () => {
     patch({ opened: true, lidOpen: !project.lidOpen });
-    if (!project.opened) configure({ tool: 'scoop' });
+    if (!project.opened && !freestyle) configure({ tool: 'scoop' });
   };
   const scoop = () => {
     if (!project.lidOpen) {
@@ -524,7 +549,13 @@ export default function App() {
             <button
               className={settings.mode === 'guided' ? 'selected' : ''}
               aria-pressed={settings.mode === 'guided'}
-              onClick={() => configure({ mode: 'guided' })}
+              onClick={() => {
+                const stage =
+                  project.scoops < SCOOPS_REQUIRED && ['carve', 'light'].includes(project.stage)
+                    ? 'prepare'
+                    : project.stage;
+                configure({ mode: 'guided', stage, tool: 'orbit' });
+              }}
             >
               <Sparkles size={13} /> Guided
             </button>
@@ -532,35 +563,41 @@ export default function App() {
               className={settings.mode === 'freestyle' ? 'selected' : ''}
               aria-pressed={settings.mode === 'freestyle'}
               onClick={() => {
-                configure({ mode: 'freestyle' });
-                notify('Freestyle: all tools and steps unlocked.');
+                setToast('');
+                configure({
+                  mode: 'freestyle',
+                  tool: settings.tool === 'orbit' ? 'cut' : settings.tool,
+                });
+                setFreePanel('carve');
               }}
             >
               Freestyle <MoveUpRight size={12} />
             </button>
           </div>
         </div>
-        <div className="workspace" ref={workspaceRef}>
+        <div className={`workspace ${freestyle ? 'freestyle-workspace' : ''}`} ref={workspaceRef}>
           <div className="left-workspace">
             <div className="scene-card">
-              <div className="stepper" aria-label="Carving steps">
-                {STAGES.map((s, i) => (
-                  <button
-                    key={s.id}
-                    className={`step ${settings.stage === s.id ? 'current' : ''} ${i < stageIndex ? 'done' : ''}`}
-                    onClick={() => goToStage(s.id)}
-                    aria-label={s.title}
-                    aria-current={settings.stage === s.id ? 'step' : undefined}
-                  >
-                    <span className="step-number">
-                      {i < stageIndex ? <Check size={12} /> : `0${i + 1}`}
-                    </span>
-                    <span className="step-title">{s.title}</span>
-                    <span className="step-short">{s.short}</span>
-                    {i < 3 && <span className="step-connector" />}
-                  </button>
-                ))}
-              </div>
+              {!freestyle && (
+                <div className="stepper" aria-label="Carving steps">
+                  {STAGES.map((s, i) => (
+                    <button
+                      key={s.id}
+                      className={`step ${settings.stage === s.id ? 'current' : ''} ${i < stageIndex ? 'done' : ''}`}
+                      onClick={() => goToStage(s.id)}
+                      aria-label={s.title}
+                      aria-current={settings.stage === s.id ? 'step' : undefined}
+                    >
+                      <span className="step-number">
+                        {i < stageIndex ? <Check size={12} /> : `0${i + 1}`}
+                      </span>
+                      <span className="step-title">{s.title}</span>
+                      <span className="step-short">{s.short}</span>
+                      {i < 3 && <span className="step-connector" />}
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className={`viewport ${settings.environment === 'night' ? 'night' : ''}`}>
                 <div ref={hostRef} className="canvas-host" />
                 {!ready && !error && (
@@ -734,14 +771,43 @@ export default function App() {
             </div>
           </div>
           <aside className="sidebar">
-            <div className="sidebar-content">
-              <div className="panel-eyebrow">
-                <span>STEP 0{stageIndex + 1}</span>
-                <span>{settings.mode === 'guided' ? 'GUIDED' : 'FREESTYLE'}</span>
+            {freestyle && (
+              <div className="inspector-tabs" role="tablist" aria-label="Workspace controls">
+                {(
+                  [
+                    { id: 'carve', title: 'Tools' },
+                    { id: 'pick', title: 'Pumpkin' },
+                    { id: 'light', title: 'Lighting' },
+                  ] as const
+                ).map((tab) => (
+                  <button
+                    key={tab.id}
+                    role="tab"
+                    id={`tab-${tab.id}`}
+                    aria-selected={freePanel === tab.id}
+                    aria-controls="workspace-inspector"
+                    onClick={() => setFreePanel(tab.id)}
+                  >
+                    {tab.title}
+                  </button>
+                ))}
               </div>
-              {settings.stage === 'pick' && (
+            )}
+            <div
+              className="sidebar-content"
+              id="workspace-inspector"
+              role={freestyle ? 'tabpanel' : undefined}
+              aria-labelledby={freestyle ? `tab-${freePanel}` : undefined}
+            >
+              {!freestyle && (
+                <div className="panel-eyebrow">
+                  <span>STEP 0{stageIndex + 1}</span>
+                  <span>{settings.mode === 'guided' ? 'GUIDED' : 'FREESTYLE'}</span>
+                </div>
+              )}
+              {panel === 'pick' && (
                 <>
-                  <h2>Pick your pumpkin</h2>
+                  <h2>{freestyle ? 'Pumpkin' : 'Pick your pumpkin'}</h2>
                   <p className="panel-description">Select a shape. Drag to inspect it.</p>
                   <div className="shape-list">
                     {SHAPES.map((s) => (
@@ -764,7 +830,7 @@ export default function App() {
                   </div>
                 </>
               )}
-              {settings.stage === 'prepare' && (
+              {!freestyle && panel === 'prepare' && (
                 <>
                   <h2>Gut the pumpkin</h2>
                   <p className="panel-description">Cut the lid, then remove the pulp and seeds.</p>
@@ -827,12 +893,14 @@ export default function App() {
                   </button>
                 </>
               )}
-              {settings.stage === 'carve' && (
+              {panel === 'carve' && (
                 <>
-                  <h2>Carve & paint</h2>
-                  <p className="panel-description">
-                    Select a tool below the canvas. Right-drag to rotate.
-                  </p>
+                  <h2>{freestyle ? 'Tools' : 'Carve & paint'}</h2>
+                  {!freestyle && (
+                    <p className="panel-description">
+                      Select a tool below the canvas. Right-drag to rotate.
+                    </p>
+                  )}
                   <div className="active-tool-card">
                     <ToolIllustration tool={settings.tool} />
                     <div>
@@ -942,6 +1010,54 @@ export default function App() {
                       </div>
                     </div>
                   )}
+                  {freestyle && (
+                    <div className="free-cavity">
+                      <div className="control-section-title">
+                        <span>CAVITY</span>
+                        <span>
+                          {Math.round((1 - project.scoops / SCOOPS_REQUIRED) * 100)}% pulp
+                        </span>
+                      </div>
+                      <div className="cavity-actions">
+                        <button className="secondary" onClick={liftLid}>
+                          {project.lidOpen
+                            ? 'Replace lid'
+                            : project.opened
+                              ? 'Lift lid'
+                              : 'Open lid'}
+                        </button>
+                        <button
+                          className="secondary"
+                          onClick={() => engineRef.current?.resetView('top')}
+                        >
+                          View inside
+                        </button>
+                        <button
+                          className="secondary"
+                          disabled={project.scoops === SCOOPS_REQUIRED}
+                          onClick={() => patch({ scoops: SCOOPS_REQUIRED })}
+                        >
+                          Empty cavity
+                        </button>
+                        <button
+                          className="secondary"
+                          disabled={project.scoops === 0}
+                          onClick={() => patch({ scoops: 0 })}
+                        >
+                          Refill pulp
+                        </button>
+                      </div>
+                      {settings.tool === 'scoop' && (
+                        <button
+                          className="secondary full spaced"
+                          disabled={!project.lidOpen || project.scoops === SCOOPS_REQUIRED}
+                          onClick={scoop}
+                        >
+                          Pull out a scoop
+                        </button>
+                      )}
+                    </div>
+                  )}
                   <button
                     className="template-toggle"
                     onClick={() => setTemplatesOpen(!templatesOpen)}
@@ -969,20 +1085,23 @@ export default function App() {
                       <small>Templates add real cuts to the front. Undo any time.</small>
                     </div>
                   )}
-                  <button
-                    className="text-action"
-                    onClick={() => {
-                      if (project.opened) patch({ lidOpen: !project.lidOpen });
-                      else notify('Cut your lid in the Scoop step first.');
-                    }}
-                  >
-                    {project.lidOpen ? 'Replace the lid' : 'Lift the lid'} <ArrowRight size={13} />
-                  </button>
+                  {!freestyle && (
+                    <button
+                      className="text-action"
+                      onClick={() => {
+                        if (project.opened) patch({ lidOpen: !project.lidOpen });
+                        else notify('Cut your lid in the Scoop step first.');
+                      }}
+                    >
+                      {project.lidOpen ? 'Replace the lid' : 'Lift the lid'}{' '}
+                      <ArrowRight size={13} />
+                    </button>
+                  )}
                 </>
               )}
-              {settings.stage === 'light' && (
+              {panel === 'light' && (
                 <>
-                  <h2>Light the lantern</h2>
+                  <h2>{freestyle ? 'Lighting' : 'Light the lantern'}</h2>
                   <p className="panel-description">
                     Choose a light source and adjust its intensity.
                   </p>
@@ -1088,60 +1207,62 @@ export default function App() {
                 </>
               )}
             </div>
-            <div className="panel-footer">
-              {settings.stage === 'pick' ? (
-                <>
-                  <div className="selected-pumpkin">
-                    <span>SELECTED</span>
-                    <strong>{shape.name}</strong>
-                  </div>
-                  <button className="primary full" onClick={() => goToStage('prepare')}>
-                    Use this pumpkin <ArrowRight size={17} />
-                  </button>
-                </>
-              ) : settings.stage === 'prepare' ? (
-                <>
-                  <button
-                    className="primary full"
-                    disabled={settings.mode === 'guided' && project.scoops < SCOOPS_REQUIRED}
-                    onClick={() => {
-                      goToStage('carve');
-                      if (project.lidOpen) patch({ lidOpen: false, stage: 'carve' });
-                    }}
-                  >
-                    Start carving <ArrowRight size={17} />
-                  </button>
-                  <button className="back-step" onClick={() => goToStage('pick')}>
-                    <ArrowLeft size={12} /> Choose pumpkin
-                  </button>
-                </>
-              ) : settings.stage === 'carve' ? (
-                <>
-                  <button
-                    className="primary full"
-                    onClick={() => {
-                      goToStage('light');
-                      if (project.light === 'none')
-                        patch({ light: 'tealight', lidOpen: false, stage: 'light' });
-                    }}
-                  >
-                    Add lighting <Sparkles size={16} />
-                  </button>
-                  <button className="back-step" onClick={() => goToStage('prepare')}>
-                    <ArrowLeft size={12} /> Prepare pumpkin
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button className="primary full" onClick={openExport}>
-                    <Film size={16} /> Export pumpkin <ArrowRight size={16} />
-                  </button>
-                  <button className="back-step" onClick={saveToGallery}>
-                    <Save size={13} /> Save to My pumpkins
-                  </button>
-                </>
-              )}
-            </div>
+            {!freestyle && (
+              <div className="panel-footer">
+                {settings.stage === 'pick' ? (
+                  <>
+                    <div className="selected-pumpkin">
+                      <span>SELECTED</span>
+                      <strong>{shape.name}</strong>
+                    </div>
+                    <button className="primary full" onClick={() => goToStage('prepare')}>
+                      Use this pumpkin <ArrowRight size={17} />
+                    </button>
+                  </>
+                ) : settings.stage === 'prepare' ? (
+                  <>
+                    <button
+                      className="primary full"
+                      disabled={settings.mode === 'guided' && project.scoops < SCOOPS_REQUIRED}
+                      onClick={() => {
+                        goToStage('carve');
+                        if (project.lidOpen) patch({ lidOpen: false, stage: 'carve' });
+                      }}
+                    >
+                      Start carving <ArrowRight size={17} />
+                    </button>
+                    <button className="back-step" onClick={() => goToStage('pick')}>
+                      <ArrowLeft size={12} /> Choose pumpkin
+                    </button>
+                  </>
+                ) : settings.stage === 'carve' ? (
+                  <>
+                    <button
+                      className="primary full"
+                      onClick={() => {
+                        goToStage('light');
+                        if (project.light === 'none')
+                          patch({ light: 'tealight', lidOpen: false, stage: 'light' });
+                      }}
+                    >
+                      Add lighting <Sparkles size={16} />
+                    </button>
+                    <button className="back-step" onClick={() => goToStage('prepare')}>
+                      <ArrowLeft size={12} /> Prepare pumpkin
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button className="primary full" onClick={openExport}>
+                      <Film size={16} /> Export pumpkin <ArrowRight size={16} />
+                    </button>
+                    <button className="back-step" onClick={saveToGallery}>
+                      <Save size={13} /> Save to My pumpkins
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
           </aside>
         </div>
       </main>
@@ -1204,9 +1325,9 @@ export default function App() {
           <div className="help-note">
             <strong>Guided or Freestyle</strong>
             <p>
-              Guided takes you through each step. Freestyle lets you choose any tool in any order.
-              Your current pumpkin saves on this device. Download a project file to keep an editable
-              copy.
+              Guided takes you through each step. Freestyle has no steps: switch tools, change the
+              pumpkin or lighting, and empty or refill the cavity whenever you like. Your current
+              pumpkin saves on this device. Download a project file to keep an editable copy.
             </p>
           </div>
           <div className="shortcuts">
@@ -1411,7 +1532,12 @@ export default function App() {
             className="primary full"
             onClick={() => {
               commit(cloneProject(DEFAULT_PROJECT), 'Started fresh');
-              configure({ ...DEFAULT_SETTINGS });
+              configure({
+                ...DEFAULT_SETTINGS,
+                mode: settings.mode,
+                tool: freestyle ? 'cut' : 'orbit',
+              });
+              setFreePanel('carve');
               engineRef.current?.resetView();
               setModal(null);
               notify('New pumpkin created.');

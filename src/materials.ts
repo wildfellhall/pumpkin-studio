@@ -266,10 +266,11 @@ export function tissueTexture() {
     img = ctx.createImageData(256, 256);
   for (let y = 0; y < 256; y++)
     for (let x = 0; x < 256; x++) {
-      const fib = noise(x / 2.5 + Math.sin(y * 0.05) * 2, y / 32),
+      const fib = noise(x / 3 + Math.sin(y * 0.035) * 2, y / 30),
+        cells = noise(x / 7, y / 8),
         grain = hash(x, y);
-      const n = 140 + fib * 90 + grain * 20;
-      img.data.set([n, n * 0.91, n * 0.65, 255], (y * 256 + x) * 4);
+      const n = 166 + fib * 47 + cells * 22 + grain * 13;
+      img.data.set([n, n * 0.96, n * 0.86, 255], (y * 256 + x) * 4);
     }
   ctx.putImageData(img, 0, 0);
   return texture(c);

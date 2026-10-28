@@ -11,7 +11,7 @@
   --orange: #f18a38;
   --orange-dark: #ffab61;
   --panel: #1b171e;
-  --serif: 'Creepster', fantasy;
+  --serif: 'Cormorant Garamond', Georgia, serif;
   --label: 'Barlow Condensed', sans-serif;
 }
 * {
@@ -87,8 +87,9 @@ h3 {
 }
 .wordmark > span:first-of-type {
   font-family: var(--serif);
-  font-size: 39px;
-  letter-spacing: 1.5px;
+  font-size: 35px;
+  font-weight: 600;
+  letter-spacing: 3px;
   color: #f3e7d7;
   line-height: 1;
 }
@@ -1930,5 +1931,61 @@ kbd {
     transition: none !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+  }
+}
+
+/* Freestyle is an inspector, with no sequential workflow or forced camera moves. */
+.freestyle-workspace .viewport {
+  height: calc(100dvh - 266px);
+}
+.inspector-tabs {
+  display: flex;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--line);
+  padding: 0 14px;
+  gap: 4px;
+}
+.inspector-tabs button {
+  flex: 1;
+  padding: 15px 4px 12px;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+}
+.inspector-tabs button[aria-selected='true'] {
+  border-color: var(--orange);
+  color: var(--ink);
+}
+.freestyle-workspace .sidebar h2 {
+  margin-bottom: 20px;
+}
+.free-cavity {
+  border-top: 1px solid var(--line);
+  margin-top: 24px;
+  padding-top: 20px;
+}
+.control-section-title {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 10px;
+  margin-bottom: 12px;
+}
+.control-section-title span:first-child {
+  font-family: var(--label);
+  letter-spacing: 1px;
+}
+.cavity-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+}
+.cavity-actions .secondary {
+  padding: 10px 6px;
+  min-height: 34px;
+  font-size: 10px;
+}
+@media (max-width: 720px) {
+  .freestyle-workspace .viewport {
+    height: 470px;
   }
 }
