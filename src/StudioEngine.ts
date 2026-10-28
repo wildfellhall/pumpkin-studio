@@ -6,15 +6,9 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { buildShell, LID_V, sawCuts, stampPolygon, surfacePoint } from './geometry';
-import {
-  createFlameMaterial,
-  createSkinTextures,
-  glowTexture,
-  renderPaint,
-  rng,
-  woodTexture,
-} from './materials';
+import { createFlameMaterial, createSkinTextures, renderPaint } from './materials';
 import { createGuts, createStem, createTool, disposeObject } from './props';
+import { Workbench } from './workbench';
 import {
   cloneProject,
   DEFAULT_SETTINGS,
@@ -77,7 +71,7 @@ export class StudioEngine {
   private hemi = new THREE.HemisphereLight('#fffaeb', '#9a8871', 2);
   private key = new THREE.DirectionalLight('#fff4da', 3);
   private fill = new THREE.DirectionalLight('#dce9ff', 1);
-  private floor: THREE.Mesh;
+  private workbench: Workbench;
   private env: THREE.WebGLRenderTarget;
   private resizeObserver: ResizeObserver;
   private frame = 0;
@@ -136,7 +130,7 @@ export class StudioEngine {
     room.dispose();
     pmrem.dispose();
     this.scene.environmentIntensity = 0.55;
-    this.camera.position.set(2.0, 2.75, 6.4);
+    this.camera.position.set(0.8, 3.0, 7.4);
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.target.set(0, 0.96, 0);
     this.controls.enableDamping = true;
@@ -155,74 +149,15 @@ export class StudioEngine {
     this.key.shadow.camera.right = 5;
     this.key.shadow.camera.top = 6;
     this.key.shadow.camera.bottom = -4;
-    this.key.shadow.normalBias = 0.025;
+    this.key.shadow.normalBias = 0.012;
     this.key.shadow.bias = -0.0002;
     this.key.shadow.radius = 4;
     this.fill.position.set(4, 3, -3);
-    this.floor = new THREE.Mesh(
-      new THREE.PlaneGeometry(200, 200),
-      new THREE.MeshStandardMaterial({ color: '#e7e1d5', roughness: 1 }),
-    );
-    this.floor.rotation.x = -Math.PI / 2;
-    this.floor.position.y = -0.12;
-    this.floor.receiveShadow = true;
-    this.scene.add(this.floor);
-    const wood = woodTexture();
-    const board = new THREE.Mesh(
-      new THREE.CylinderGeometry(2.34, 2.36, 0.1, 100),
-      new THREE.MeshStandardMaterial({
-        map: wood,
-        color: '#6c5147',
-        roughness: 0.74,
-        bumpMap: wood,
-        bumpScale: 0.012,
-      }),
-    );
-    board.position.set(0, -0.035, 0);
-    board.receiveShadow = true;
-    board.castShadow = true;
-    this.scene.add(board);
-    const groove = new THREE.Mesh(
-      new THREE.TorusGeometry(2.17, 0.008, 5, 128),
-      new THREE.MeshStandardMaterial({ color: '#795b3e', roughness: 1 }),
-    );
-    groove.rotation.x = Math.PI / 2;
-    groove.position.y = 0.019;
-    this.scene.add(groove);
-    const random = rng(33),
-      seedMat = new THREE.MeshStandardMaterial({ color: '#eee0b7', roughness: 0.65 });
-    for (let i = 0; i < 7; i++) {
-      const seed = new THREE.Mesh(new THREE.SphereGeometry(0.06, 10, 8), seedMat);
-      seed.scale.set(0.7, 0.2, 1.35);
-      seed.rotation.y = random() * 6;
-      seed.position.set(-1.65 + random() * 0.44, 0.045, 0.55 + random() * 0.65);
-      seed.castShadow = true;
-      this.scene.add(seed);
-    }
-    this.scene.add(this.root);
+    this.workbench = new Workbench();
+    this.scene.add(this.workbench.root, this.root);
     this.root.position.y = -0.13;
     this.root.add(this.line);
     this.line.renderOrder = 10;
-    const contactCanvas = document.createElement('canvas');
-    contactCanvas.width = contactCanvas.height = 128;
-    const contactContext = contactCanvas.getContext('2d')!;
-    const contactGradient = contactContext.createRadialGradient(64, 64, 9, 64, 64, 64);
-    contactGradient.addColorStop(0, 'rgba(38,25,9,.42)');
-    contactGradient.addColorStop(0.45, 'rgba(38,25,9,.21)');
-    contactGradient.addColorStop(1, 'rgba(38,25,9,0)');
-    contactContext.fillStyle = contactGradient;
-    contactContext.fillRect(0, 0, 128, 128);
-    const contact = new THREE.Mesh(
-      new THREE.PlaneGeometry(2.8, 2.8),
-      new THREE.MeshBasicMaterial({
-        map: new THREE.CanvasTexture(contactCanvas),
-        transparent: true,
-        depthWrite: false,
-      }),
-    );
-    contact.rotation.x = -Math.PI / 2;
-    contact.position.y = 0.023;
-    this.scene.add(contact);
     this.skin.map = this.skinTextures.map;
     this.skin.bumpMap = this.skinTextures.bumpMap;
     this.skin.roughnessMap = this.skinTextures.roughnessMap;
@@ -457,18 +392,6 @@ export class StudioEngine {
       this.flame.position.y = height + 0.1;
     }
     this.candle.add(this.flame);
-    const halo = new THREE.Sprite(
-      new THREE.SpriteMaterial({
-        map: glowTexture(),
-        blending: THREE.AdditiveBlending,
-        transparent: true,
-        depthWrite: false,
-        opacity: 0.38,
-      }),
-    );
-    halo.position.y = height + 0.21;
-    halo.scale.set(0.9, 0.9, 1);
-    this.candle.add(halo);
     this.candle.position.set(0, 0.27, 0);
     this.candle.visible = kind !== 'none';
     this.root.add(this.candle);
@@ -538,13 +461,13 @@ export class StudioEngine {
   private setEnvironment(environment: 'day' | 'night') {
     this.environment = environment;
     const night = environment === 'night';
-    const bg = new THREE.Color(night ? '#0d0914' : '#201721');
+    const bg = new THREE.Color(night ? '#151916' : '#3d453e');
     this.scene.background = bg;
-    this.scene.fog = new THREE.FogExp2(bg, 0.05);
-    (this.floor.material as THREE.MeshStandardMaterial).color.set(night ? '#17111f' : '#241a24');
-    this.hemi.intensity = night ? 0.16 : 0.55;
-    this.key.intensity = night ? 0.15 : 2.35;
-    this.key.color.set(night ? '#bca3f0' : '#ffebcf');
+    this.scene.fog = null;
+    this.workbench.setLighting(environment);
+    this.hemi.intensity = night ? 0.22 : 0.75;
+    this.key.intensity = night ? 0.2 : 2.1;
+    this.key.color.set(night ? '#b4c7e0' : '#fff1dc');
     this.fill.intensity = night ? 0.5 : 0.85;
     this.scene.environmentIntensity = night ? 0.12 : 0.32;
     this.bloom.strength = night ? 0.37 : 0.08;
@@ -813,6 +736,7 @@ export class StudioEngine {
 
   private tick(dt: number) {
     this.time += dt;
+    this.workbench.update(this.time, this.camera.position);
     this.guts.visible =
       (this.settings.mode === 'guided' && this.settings.stage === 'prepare') ||
       this.currentProject.lidOpen ||
@@ -905,6 +829,7 @@ export class StudioEngine {
   getState() {
     return {
       ready: true,
+      setting: 'decorated 3D workbench',
       shape: this.currentProject.shape,
       stage: this.settings.stage,
       mode: this.settings.mode,

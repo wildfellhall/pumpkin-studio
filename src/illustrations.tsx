@@ -1,4 +1,3 @@
-import { useId } from 'react';
 import type { ShapeId, Tool } from './types';
 
 export function PumpkinIcon({ size = 28 }: { size?: number }) {
@@ -23,7 +22,6 @@ export function PumpkinThumbnail({
   shape: ShapeId;
   className?: string;
 }) {
-  const id = useId().replace(/:/g, '');
   const colors =
     shape === 'ghost'
       ? ['#fff6d6', '#b8ad8d', '#e1d5ae']
@@ -36,27 +34,11 @@ export function PumpkinThumbnail({
   const sx = shape === 'tall' ? 0.82 : 1;
   return (
     <svg className={className} viewBox="0 0 110 100" role="img" aria-label={`${shape} pumpkin`}>
-      <defs>
-        <radialGradient id={`${id}skin`} cx="33%" cy="24%" r="80%">
-          <stop stopColor={colors[0]} />
-          <stop offset=".58" stopColor={colors[2]} />
-          <stop offset="1" stopColor={colors[1]} />
-        </radialGradient>
-        <linearGradient id={`${id}stem`}>
-          <stop stopColor="#929167" />
-          <stop offset=".45" stopColor="#575b35" />
-          <stop offset="1" stopColor="#343e24" />
-        </linearGradient>
-        <radialGradient id={`${id}shadow`}>
-          <stop stopColor="#4a3524" stopOpacity=".2" />
-          <stop offset="1" stopColor="#4a3524" stopOpacity="0" />
-        </radialGradient>
-      </defs>
-      <ellipse cx="56" cy="86" rx="43" ry="9" fill={`url(#${id}shadow)`} />
+      <ellipse cx="56" cy="86" rx="43" ry="9" fill="#171b15" fillOpacity=".22" />
       <g transform={`translate(55 80) scale(${sx} ${sy}) translate(-55 -80)`}>
         <path
           d="M55 29c-13-10-35-3-38 15-4 22 8 40 25 41 5 2 10 0 13 0 6 2 10 2 16 0 20-2 28-19 23-40-4-18-23-23-39-16Z"
-          fill={`url(#${id}skin)`}
+          fill={colors[2]}
         />
         <path
           d="M50 29C30 33 28 69 43 84M59 29c20 4 23 36 10 54M36 30C19 45 24 69 33 78M73 30c16 14 16 33 7 47"
@@ -72,7 +54,7 @@ export function PumpkinThumbnail({
           strokeWidth="2.5"
           fill="none"
         />
-        <path d="M51 31c2-9 0-14 8-20l6 3c-7 7-7 11-6 17l-4 4Z" fill={`url(#${id}stem)`} />
+        <path d="M51 31c2-9 0-14 8-20l6 3c-7 7-7 11-6 17l-4 4Z" fill="#69704a" />
         <path d="m56 28 4-13" stroke="#bbb18b" strokeWidth="1" opacity=".5" />
       </g>
     </svg>
@@ -80,55 +62,41 @@ export function PumpkinThumbnail({
 }
 
 export function ToolIllustration({ tool }: { tool: Tool }) {
-  const id = useId().replace(/:/g, '');
   return (
     <svg viewBox="0 0 60 68" aria-hidden="true" className="tool-illustration">
-      <defs>
-        <linearGradient id={`${id}metal`}>
-          <stop stopColor="#8d999c" />
-          <stop offset=".3" stopColor="#f7f8f6" />
-          <stop offset=".55" stopColor="#c5caca" />
-          <stop offset="1" stopColor="#758083" />
-        </linearGradient>
-        <linearGradient id={`${id}wood`}>
-          <stop stopColor="#563523" />
-          <stop offset=".45" stopColor="#a46e49" />
-          <stop offset="1" stopColor="#65402a" />
-        </linearGradient>
-      </defs>
       <g transform="rotate(24 30 34)">
         {['saw', 'drill', 'gouge', 'scraper'].includes(tool) && (
           <>
-            <rect x="24" y="38" width="12" height="26" rx="4" fill={`url(#${id}wood)`} />
-            <rect x="24" y="35" width="12" height="5" rx="1" fill={`url(#${id}metal)`} />
+            <rect x="24" y="38" width="12" height="26" rx="4" fill="#926444" />
+            <rect x="24" y="35" width="12" height="5" rx="1" fill="#bac2bd" />
             {tool === 'saw' && (
               <path
                 d="M26 36V5l5-3 1 4 5 2-5 2 5 2-5 2 5 2-5 2 5 2-5 2 5 2-5 2 5 2-5 2 5 2-5 2v4Z"
-                fill={`url(#${id}metal)`}
+                fill="#bac2bd"
                 stroke="#89969a"
                 strokeWidth=".4"
               />
             )}
             {tool === 'drill' && (
               <>
-                <path d="m27 34 1-26 2-5 3 5v26Z" fill={`url(#${id}metal)`} />
+                <path d="m27 34 1-26 2-5 3 5v26Z" fill="#bac2bd" />
                 <path
                   d="m27 11 6 3m-6 2 6 3m-6 2 6 3m-6 2 6 3m-6 2 6 3"
                   stroke="#515f65"
                   strokeWidth="1.6"
                 />
-                <rect x="25" y="30" width="10" height="7" rx="2" fill={`url(#${id}metal)`} />
+                <rect x="25" y="30" width="10" height="7" rx="2" fill="#bac2bd" />
               </>
             )}
             {tool === 'gouge' && (
               <>
-                <path d="M28 36V20l-8-6V5l10 6L40 5v9l-8 6v16Z" fill={`url(#${id}metal)`} />
+                <path d="M28 36V20l-8-6V5l10 6L40 5v9l-8 6v16Z" fill="#bac2bd" />
                 <path d="M30 11v10m-10-7 10 7 10-7" stroke="#647379" strokeWidth=".8" />
               </>
             )}
             {tool === 'scraper' && (
               <>
-                <path d="M28 36V28L15 17V5q15-4 30 0v12L32 28v8Z" fill={`url(#${id}metal)`} />
+                <path d="M28 36V28L15 17V5q15-4 30 0v12L32 28v8Z" fill="#bac2bd" />
                 <path d="M15 7q15-4 30 0" fill="none" stroke="#f4f6f2" strokeWidth="1.3" />
               </>
             )}
@@ -136,13 +104,8 @@ export function ToolIllustration({ tool }: { tool: Tool }) {
         )}
         {['knife', 'cut'].includes(tool) && (
           <>
-            <path
-              d="M25 34V5c10 6 13 18 8 29Z"
-              fill={`url(#${id}metal)`}
-              stroke="#7c8786"
-              strokeWidth=".45"
-            />
-            <rect x="23" y="33" width="12" height="29" rx="4" fill={`url(#${id}wood)`} />
+            <path d="M25 34V5c10 6 13 18 8 29Z" fill="#bac2bd" stroke="#7c8786" strokeWidth=".45" />
+            <rect x="23" y="33" width="12" height="29" rx="4" fill="#926444" />
             <path d="M23 34h12" stroke="#c0c6c3" strokeWidth="3" />
             <circle cx="29" cy="42" r="1.6" fill="#c7c4b2" />
             <circle cx="29" cy="54" r="1.6" fill="#c7c4b2" />
@@ -155,20 +118,20 @@ export function ToolIllustration({ tool }: { tool: Tool }) {
               cy="16"
               rx="13"
               ry="17"
-              fill={`url(#${id}metal)`}
+              fill="#bac2bd"
               stroke="#8b9695"
               strokeWidth=".5"
             />
             <ellipse cx="28" cy="14" rx="9" ry="12" fill="none" stroke="#8c9698" strokeWidth=".9" />
-            <path d="M27 31h4v12h-4z" fill={`url(#${id}metal)`} />
-            <rect x="24" y="39" width="10" height="25" rx="4" fill={`url(#${id}wood)`} />
+            <path d="M27 31h4v12h-4z" fill="#bac2bd" />
+            <rect x="24" y="39" width="10" height="25" rx="4" fill="#926444" />
           </>
         )}
         {tool === 'paint' && (
           <>
             <path d="M21 7q8 4 16 0l-2 22H23Z" fill="#c4a579" />
             <path d="M24 8v17m4-16v16m4-17v17" stroke="#877353" strokeWidth=".8" />
-            <rect x="22" y="25" width="14" height="13" rx="1" fill={`url(#${id}metal)`} />
+            <rect x="22" y="25" width="14" height="13" rx="1" fill="#bac2bd" />
             <path d="M25 38h8l-1 25h-6Z" fill="#52624c" />
           </>
         )}
@@ -186,12 +149,12 @@ export function ToolIllustration({ tool }: { tool: Tool }) {
             <path
               d="M29 8 8 43h42Z"
               fill="none"
-              stroke={`url(#${id}metal)`}
+              stroke="#bac2bd"
               strokeWidth="6"
               strokeLinejoin="round"
             />
             <path d="M29 13 12 42h34Z" fill="none" stroke="#7f8988" strokeWidth=".6" />
-            <rect x="22" y="47" width="14" height="12" rx="4" fill={`url(#${id}wood)`} />
+            <rect x="22" y="47" width="14" height="12" rx="4" fill="#926444" />
           </>
         )}
         {tool === 'eraser' && (

@@ -10,7 +10,15 @@ Reference photos were inspected for structure and lighting; no third-party photo
 - [Jack-o’-lanterns, Abingdon Square Conservancy](https://www.abingdonsquare.org/17th-annual-pumpkin-patch-2024): deep cavities, pale cut flesh, localized warm illumination, and visible wall thickness.
 - [Pumpkin seeds and stringy pulp, Does It Go Bad](https://www.doesitgobad.com/wp-content/uploads/Pumpkin-seeds-and-stringy-inside.jpg): orange tissue membranes, tangled fibers, wet highlights, and flat cream seeds with raised edges.
 
-The interface uses charcoal and muted plum surfaces, orange controls, locally bundled Cormorant Garamond display type, and condensed utility labels. The canvas occupies the main workspace; tool controls remain directly below it. Headings and instructions describe actions rather than decorative seasonal copy.
+The interface uses solid charcoal and aged olive surfaces, orange controls, locally bundled Cormorant Garamond display type, and condensed utility labels. The canvas occupies the main workspace; tool controls remain directly below it. CSS and SVG gradients have been removed, including the simulated contact-shadow and flame-halo textures; actual lights, shadow maps and bloom provide scene shading. Headings and instructions describe actions rather than decorative seasonal copy.
+
+## Workbench environment
+
+The background is modeled in `src/workbench.ts` and rendered by the same Three.js/WebGL2 renderer as the editable pumpkin. It includes individually edged timber planks with seams and nails, a scratched rectangular cutting board, a plaster wall with wood paneling, a framed window with branch silhouettes, a pegboard holding modeled tools, an enamel bowl, a folded cloth, brushes, cutters and scattered seeds. All assets are generated locally.
+
+Halloween decorations include an actual carved miniature pumpkin, ivory and sage pumpkins, paper bats suspended from a cord, emissive string-light bulbs, two geometric cobwebs with a hanging spider, fallen leaves and three dripping wax candles. The candle flames use time-varying shaders and point lights. Day/night switches change the room's illumination, window material and decorative lights together. The nearby wall cuts away when the camera orbits behind it; the distant room walls stay outside the orbit radius.
+
+The environment casts and receives real shadows. The editable pumpkin retains its own collider, so decorative props do not intercept carving gestures. PNG and video exports include the full rendered workbench; only the user's pumpkin rotates in turntable exports. The new scene was checked from the front, above and behind, in both lighting conditions.
 
 ## Geometry and materials
 
@@ -53,6 +61,6 @@ The repository README is intentionally a zero-byte file, as requested.
 
 ## Verified build
 
-The desktop end-to-end test passed on Chromium with Metal acceleration on October 27, 2026, with no browser errors. It exercises all five varieties, guided ordering, actual lid/scoop/cut/paint gestures, cutters, saw slots, drill holes, V-gouge and scraper strokes, erase and undo/redo, candle and LED settings, rotation, project downloads/import, local gallery, reload persistence, export cancellation, unrestricted Freestyle editing, camera preservation, cavity empty/refill undo, mode persistence, Guided re-entry, modal keyboard dismissal, and a 390-pixel mobile layout without horizontal overflow.
+The desktop end-to-end test passed on Chromium with Metal acceleration on October 28, 2026, with no browser errors. It exercises all five varieties, guided ordering, actual lid/scoop/cut/paint gestures, cutters, saw slots, drill holes, V-gouge and scraper strokes, erase and undo/redo, candle and LED settings, rotation, project downloads/import, local gallery, reload persistence, export cancellation, unrestricted Freestyle editing, camera preservation, cavity empty/refill undo, mode persistence, Guided re-entry, modal keyboard dismissal, and a 390-pixel mobile layout without horizontal overflow.
 
 Downloaded videos were independently decoded with FFmpeg and inspected at multiple points in the turn. The tested six-second exports were H.264 MP4: 1280 × 720 in night lighting and 1920 × 1080 in daylight. Other browsers may choose WebM instead. Production build and six geometry/project-validation tests pass, including ray tests for narrow and wide saw cuts and validation of saved surface carving. The production dependency audit reports no known vulnerabilities at verification time.

@@ -542,7 +542,7 @@ export default function App() {
         <div className="workshop-bar">
           <div className="workshop-label">
             <Scissors size={15} />
-            <h1>Carving studio</h1>
+            <h1>Carving bench</h1>
             <span className="session-label">{shape.name}</span>
           </div>
           <div className="mode-switch" role="group" aria-label="Carving mode">
@@ -618,7 +618,7 @@ export default function App() {
                 )}
                 <div className="scene-top">
                   <span className="scene-label">
-                    <span className="live-dot" /> LIVE VIEW
+                    <span className="live-dot" /> WORKBENCH
                   </span>
                   <div className="light-switch" role="group" aria-label="Scene lighting">
                     <button

@@ -313,19 +313,6 @@ export function stemTexture() {
   return texture(c);
 }
 
-export function glowTexture() {
-  const c = canvas(128, 128),
-    ctx = c.getContext('2d')!;
-  const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
-  g.addColorStop(0, 'rgba(255,200,93,.6)');
-  g.addColorStop(0.2, 'rgba(255,134,31,.22)');
-  g.addColorStop(0.55, 'rgba(255,96,18,.06)');
-  g.addColorStop(1, 'rgba(255,80,0,0)');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, 128, 128);
-  return texture(c);
-}
-
 export function createFlameMaterial() {
   return new THREE.ShaderMaterial({
     transparent: true,
