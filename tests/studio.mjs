@@ -53,6 +53,21 @@ try {
   await page.waitForFunction(() => window.render_game_to_text);
   await expectState({ stage: 'pick', mode: 'guided', shape: 'classic', cuts: 0 });
   await screenshot('01-welcome');
+  // The canvas occupies almost the entire window, with no reserved sidebar or shelf area.
+  assert.equal(await page.locator('#bench-settings').isVisible(), false);
+  const coverage = await page.locator('canvas').evaluate((c) => {
+    const r = c.getBoundingClientRect();
+    return (r.width * r.height) / (innerWidth * innerHeight);
+  });
+  assert.ok(coverage > 0.93, `Canvas coverage: ${coverage}`);
+  assert.ok(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight + 1));
+  const beforePanel = await page.locator('canvas').boundingBox();
+  await click('Tool and pumpkin settings');
+  assert.deepEqual(
+    await page.locator('canvas').boundingBox(),
+    beforePanel,
+    'Opening settings does not shrink the canvas',
+  );
   await click('Tall', false);
   await expectState({ shape: 'tall' });
   await click('Heirloom', false);
@@ -149,6 +164,8 @@ try {
   await click('Undo');
   await expectState({ strokes: 0 });
   console.log('Freehand cutting, cutters, paint, marker, eraser, and undo/redo verified.');
+  if (!(await page.locator('#bench-settings').isVisible()))
+    await click('Tool and pumpkin settings');
   await click('Carving templates');
   await click('☻ Classic face');
   await expectState({ cuts: 4 });
@@ -332,6 +349,7 @@ try {
   await page.reload();
   await page.waitForFunction(() => window.render_game_to_text);
   await expectState({ mode: 'freestyle', cuts: 1, light: 'tealight', scoops: 6 });
+  await click('Tool and pumpkin settings');
   assert.equal(await page.locator('.stepper, .panel-eyebrow, .panel-footer').count(), 0);
   // Guided mode still applies its prerequisite after returning from unrestricted work.
   await click('Refill pulp');
@@ -346,6 +364,12 @@ try {
   // Responsive layout: no horizontal overflow, usable controls, live WebGL.
   await page.setViewportSize({ width: 390, height: 844 });
   await screenshot('11-mobile');
+  const mobileCoverage = await page.locator('canvas').evaluate((c) => {
+    const r = c.getBoundingClientRect();
+    return (r.width * r.height) / (innerWidth * innerHeight);
+  });
+  assert.ok(mobileCoverage > 0.89, `Mobile canvas coverage: ${mobileCoverage}`);
+  assert.ok(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight + 1));
   assert.ok(
     await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
   );
@@ -354,6 +378,12 @@ try {
   await click('◉ Tealight Low candle flame');
   await click('Night');
   await screenshot('12-mobile-night');
+  await click('Close settings');
+  assert.equal(await page.locator('#bench-settings').isVisible(), false);
+  await click('Tool and pumpkin settings');
+  await page.keyboard.press('Escape');
+  assert.equal(await page.locator('#bench-settings').isVisible(), false);
+  await screenshot('13-mobile-focus');
   assert.equal(errors.length, 0, errors.join('\n'));
   await fs.writeFile(
     path.join(output, 'report.json'),
@@ -363,6 +393,9 @@ try {
         errors,
         finalState: await state(),
         checks: [
+          'full-window canvas and no page scrolling',
+          'settings drawer preserves canvas dimensions',
+          'settings close/reopen and Escape',
           '5 varieties',
           'guided guard',
           'canvas lid opening',

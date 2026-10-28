@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ArrowDownToLine,
-  ArrowLeft,
   ArrowRight,
   Check,
   ChevronDown,
@@ -23,6 +22,7 @@ import {
   RotateCcw,
   Save,
   Scissors,
+  SlidersHorizontal,
   Sparkles,
   Sun,
   Undo2,
@@ -211,6 +211,19 @@ export default function App() {
     tool: loadMode() === 'freestyle' ? 'cut' : 'orbit',
   }));
   const [freePanel, setFreePanel] = useState<'carve' | 'pick' | 'light'>('carve');
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const inspectorTrigger = useRef<HTMLElement | null>(null);
+  const settingsToggleRef = useRef<HTMLButtonElement | null>(null);
+  const openInspector = () => {
+    inspectorTrigger.current = document.activeElement as HTMLElement | null;
+    setInspectorOpen(true);
+  };
+  const closeInspector = useCallback(() => {
+    setInspectorOpen(false);
+    const trigger = inspectorTrigger.current;
+    const canRestore = trigger?.isConnected && !trigger.matches(':disabled') && !trigger.closest('[hidden]');
+    (canRestore ? trigger : settingsToggleRef.current)?.focus();
+  }, []);
   const freestyle = settings.mode === 'freestyle';
   const panel = freestyle ? freePanel : settings.stage;
   const projectRef = useRef(project),
@@ -338,6 +351,11 @@ export default function App() {
   }, [project]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && inspectorOpen && !modal) {
+        e.preventDefault();
+        closeInspector();
+        return;
+      }
       if (
         e.target instanceof HTMLInputElement ||
         e.target instanceof HTMLTextAreaElement ||
@@ -360,7 +378,7 @@ export default function App() {
     };
     document.addEventListener('keydown', key);
     return () => document.removeEventListener('keydown', key);
-  }, [undo, redo, modal, notify]);
+  }, [undo, redo, modal, notify, inspectorOpen, closeInspector]);
 
   const stageIndex = STAGES.findIndex((s) => s.id === settings.stage);
   const shape = SHAPES.find((s) => s.id === project.shape)!;
@@ -381,12 +399,17 @@ export default function App() {
         : stage === 'carve'
           ? 'cut'
           : 'orbit';
+    if (stage === 'carve') setInspectorOpen(false);
+    else openInspector();
     configure({ stage, tool, rotating: false });
     setProject((p) => ({ ...p, stage }));
   };
   const chooseTool = (tool: Tool) => {
+    const showOptions = !['cut', 'knife'].includes(tool);
+    inspectorTrigger.current = document.activeElement as HTMLElement | null;
     if (freestyle) {
       setFreePanel('carve');
+      setInspectorOpen(showOptions);
       configure({ tool, rotating: false });
       return;
     }
@@ -398,6 +421,7 @@ export default function App() {
       }
       goToStage('carve');
     }
+    setInspectorOpen(showOptions);
     configure({ tool, rotating: false });
   };
   const liftLid = () => {
@@ -519,12 +543,49 @@ export default function App() {
           <span>HOLLOW</span>
           <span className="brand-description">PUMPKIN CARVING</span>
         </a>
+        <div className="mode-switch" role="group" aria-label="Carving mode">
+          <button
+            className={settings.mode === 'guided' ? 'selected' : ''}
+            aria-pressed={settings.mode === 'guided'}
+            onClick={() => {
+              const stage =
+                project.scoops < SCOOPS_REQUIRED && ['carve', 'light'].includes(project.stage)
+                  ? 'prepare'
+                  : project.stage;
+              setInspectorOpen(false);
+              configure({ mode: 'guided', stage, tool: 'orbit' });
+            }}
+          >
+            <Sparkles size={13} /> Guided
+          </button>
+          <button
+            className={settings.mode === 'freestyle' ? 'selected' : ''}
+            aria-pressed={settings.mode === 'freestyle'}
+            onClick={() => {
+              setToast('');
+              setInspectorOpen(false);
+              configure({
+                mode: 'freestyle',
+                tool: settings.tool === 'orbit' ? 'cut' : settings.tool,
+              });
+              setFreePanel('carve');
+            }}
+          >
+            Freestyle <MoveUpRight size={12} />
+          </button>
+        </div>
         <nav aria-label="Main navigation">
           <button className="nav-link active" onClick={() => setModal(null)}>
             Studio
           </button>
-          <button className="nav-link" onClick={() => setModal('gallery')}>
-            My pumpkins <span className="count-badge">{gallery.length}</span>
+          <button
+            className="nav-link"
+            aria-label={`My pumpkins ${gallery.length}`}
+            onClick={() => setModal('gallery')}
+          >
+            <FolderOpen size={15} />
+            <span className="nav-caption">My pumpkins</span>{' '}
+            <span className="count-badge">{gallery.length}</span>
           </button>
           <button
             className="help-button"
@@ -539,65 +600,115 @@ export default function App() {
         </nav>
       </header>
       <main>
-        <div className="workshop-bar">
-          <div className="workshop-label">
-            <Scissors size={15} />
-            <h1>Carving bench</h1>
-            <span className="session-label">{shape.name}</span>
-          </div>
-          <div className="mode-switch" role="group" aria-label="Carving mode">
-            <button
-              className={settings.mode === 'guided' ? 'selected' : ''}
-              aria-pressed={settings.mode === 'guided'}
-              onClick={() => {
-                const stage =
-                  project.scoops < SCOOPS_REQUIRED && ['carve', 'light'].includes(project.stage)
-                    ? 'prepare'
-                    : project.stage;
-                configure({ mode: 'guided', stage, tool: 'orbit' });
-              }}
-            >
-              <Sparkles size={13} /> Guided
-            </button>
-            <button
-              className={settings.mode === 'freestyle' ? 'selected' : ''}
-              aria-pressed={settings.mode === 'freestyle'}
-              onClick={() => {
-                setToast('');
-                configure({
-                  mode: 'freestyle',
-                  tool: settings.tool === 'orbit' ? 'cut' : settings.tool,
-                });
-                setFreePanel('carve');
-              }}
-            >
-              Freestyle <MoveUpRight size={12} />
-            </button>
-          </div>
-        </div>
         <div className={`workspace ${freestyle ? 'freestyle-workspace' : ''}`} ref={workspaceRef}>
+          <div className="workshop-bar">
+            <h1 className="visually-hidden">Carving bench</h1>
+            {!freestyle && (
+              <div className="stepper" aria-label="Carving steps">
+                {STAGES.map((s, i) => (
+                  <button
+                    key={s.id}
+                    className={`step ${settings.stage === s.id ? 'current' : ''} ${i < stageIndex ? 'done' : ''}`}
+                    onClick={() => goToStage(s.id)}
+                    aria-label={s.title}
+                    aria-current={settings.stage === s.id ? 'step' : undefined}
+                  >
+                    <span className="step-number">
+                      {i < stageIndex ? <Check size={12} /> : `0${i + 1}`}
+                    </span>
+                    <span className="step-title">{s.title}</span>
+                    <span className="step-short">{s.short}</span>
+                    {i < 3 && <span className="step-connector" />}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {freestyle && (
+              <div className="inspector-tabs" role="tablist" aria-label="Workspace controls">
+                {(
+                  [
+                    { id: 'carve', title: 'Tools' },
+                    { id: 'pick', title: 'Pumpkin' },
+                    { id: 'light', title: 'Lighting' },
+                  ] as const
+                ).map((tab) => (
+                  <button
+                    key={tab.id}
+                    role="tab"
+                    id={`tab-${tab.id}`}
+                    aria-selected={freePanel === tab.id}
+                    aria-controls="workspace-inspector"
+                    onClick={() => {
+                      setFreePanel(tab.id);
+                      openInspector();
+                    }}
+                  >
+                    {tab.title}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <button
+              className={`settings-toggle ${inspectorOpen ? 'selected' : ''}`}
+              ref={settingsToggleRef}
+              aria-label="Tool and pumpkin settings"
+              aria-expanded={inspectorOpen}
+              aria-controls="bench-settings"
+              onClick={() => (inspectorOpen ? closeInspector() : openInspector())}
+              title="Settings (Escape to close)"
+            >
+              <SlidersHorizontal size={15} />
+              <span>Settings</span>
+            </button>
+            {!freestyle && (
+              <div className="guided-actions">
+                {settings.stage === 'pick' ? (
+                  <button className="primary" onClick={() => goToStage('prepare')}>
+                    Use this pumpkin <ArrowRight size={14} />
+                  </button>
+                ) : settings.stage === 'prepare' ? (
+                  <button
+                    className="primary"
+                    disabled={project.scoops < SCOOPS_REQUIRED}
+                    onClick={() => {
+                      goToStage('carve');
+                      if (project.lidOpen) patch({ lidOpen: false, stage: 'carve' });
+                    }}
+                  >
+                    Start carving <ArrowRight size={14} />
+                  </button>
+                ) : settings.stage === 'carve' ? (
+                  <button
+                    className="primary"
+                    onClick={() => {
+                      goToStage('light');
+                      if (project.light === 'none')
+                        patch({ light: 'tealight', lidOpen: false, stage: 'light' });
+                    }}
+                  >
+                    Add lighting <Lightbulb size={14} />
+                  </button>
+                ) : (
+                  <>
+                    <button className="primary" onClick={openExport}>
+                      Export pumpkin <Download size={14} />
+                    </button>
+                    <button
+                      className="icon-button"
+                      onClick={saveToGallery}
+                      aria-label="Save to My pumpkins"
+                    >
+                      <Save size={15} />
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
           <div className="left-workspace">
             <div className="scene-card">
-              {!freestyle && (
-                <div className="stepper" aria-label="Carving steps">
-                  {STAGES.map((s, i) => (
-                    <button
-                      key={s.id}
-                      className={`step ${settings.stage === s.id ? 'current' : ''} ${i < stageIndex ? 'done' : ''}`}
-                      onClick={() => goToStage(s.id)}
-                      aria-label={s.title}
-                      aria-current={settings.stage === s.id ? 'step' : undefined}
-                    >
-                      <span className="step-number">
-                        {i < stageIndex ? <Check size={12} /> : `0${i + 1}`}
-                      </span>
-                      <span className="step-title">{s.title}</span>
-                      <span className="step-short">{s.short}</span>
-                      {i < 3 && <span className="step-connector" />}
-                    </button>
-                  ))}
-                </div>
-              )}
               <div className={`viewport ${settings.environment === 'night' ? 'night' : ''}`}>
                 <div ref={hostRef} className="canvas-host" />
                 {!ready && !error && (
@@ -617,9 +728,6 @@ export default function App() {
                   </div>
                 )}
                 <div className="scene-top">
-                  <span className="scene-label">
-                    <span className="live-dot" /> WORKBENCH
-                  </span>
                   <div className="light-switch" role="group" aria-label="Scene lighting">
                     <button
                       className={settings.environment === 'day' ? 'selected' : ''}
@@ -758,7 +866,7 @@ export default function App() {
               </div>
             </div>
             <div className="canvas-footer">
-              <span>
+              <span title={saveStatus}>
                 <span className="saved-dot" />
                 {saveStatus}
               </span>
@@ -770,29 +878,18 @@ export default function App() {
               </button>
             </div>
           </div>
-          <aside className="sidebar">
-            {freestyle && (
-              <div className="inspector-tabs" role="tablist" aria-label="Workspace controls">
-                {(
-                  [
-                    { id: 'carve', title: 'Tools' },
-                    { id: 'pick', title: 'Pumpkin' },
-                    { id: 'light', title: 'Lighting' },
-                  ] as const
-                ).map((tab) => (
-                  <button
-                    key={tab.id}
-                    role="tab"
-                    id={`tab-${tab.id}`}
-                    aria-selected={freePanel === tab.id}
-                    aria-controls="workspace-inspector"
-                    onClick={() => setFreePanel(tab.id)}
-                  >
-                    {tab.title}
-                  </button>
-                ))}
-              </div>
-            )}
+          <aside
+            className="sidebar"
+            id="bench-settings"
+            hidden={!inspectorOpen}
+            aria-label="Bench settings"
+          >
+            <div className="inspector-heading">
+              <span>{freestyle ? 'SETTINGS' : STAGES[stageIndex].title}</span>
+              <button className="icon-button" onClick={closeInspector} aria-label="Close settings">
+                <X size={16} />
+              </button>
+            </div>
             <div
               className="sidebar-content"
               id="workspace-inspector"
@@ -1207,62 +1304,6 @@ export default function App() {
                 </>
               )}
             </div>
-            {!freestyle && (
-              <div className="panel-footer">
-                {settings.stage === 'pick' ? (
-                  <>
-                    <div className="selected-pumpkin">
-                      <span>SELECTED</span>
-                      <strong>{shape.name}</strong>
-                    </div>
-                    <button className="primary full" onClick={() => goToStage('prepare')}>
-                      Use this pumpkin <ArrowRight size={17} />
-                    </button>
-                  </>
-                ) : settings.stage === 'prepare' ? (
-                  <>
-                    <button
-                      className="primary full"
-                      disabled={settings.mode === 'guided' && project.scoops < SCOOPS_REQUIRED}
-                      onClick={() => {
-                        goToStage('carve');
-                        if (project.lidOpen) patch({ lidOpen: false, stage: 'carve' });
-                      }}
-                    >
-                      Start carving <ArrowRight size={17} />
-                    </button>
-                    <button className="back-step" onClick={() => goToStage('pick')}>
-                      <ArrowLeft size={12} /> Choose pumpkin
-                    </button>
-                  </>
-                ) : settings.stage === 'carve' ? (
-                  <>
-                    <button
-                      className="primary full"
-                      onClick={() => {
-                        goToStage('light');
-                        if (project.light === 'none')
-                          patch({ light: 'tealight', lidOpen: false, stage: 'light' });
-                      }}
-                    >
-                      Add lighting <Sparkles size={16} />
-                    </button>
-                    <button className="back-step" onClick={() => goToStage('prepare')}>
-                      <ArrowLeft size={12} /> Prepare pumpkin
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button className="primary full" onClick={openExport}>
-                      <Film size={16} /> Export pumpkin <ArrowRight size={16} />
-                    </button>
-                    <button className="back-step" onClick={saveToGallery}>
-                      <Save size={13} /> Save to My pumpkins
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
           </aside>
         </div>
       </main>
@@ -1538,6 +1579,7 @@ export default function App() {
                 tool: freestyle ? 'cut' : 'orbit',
               });
               setFreePanel('carve');
+              setInspectorOpen(false);
               engineRef.current?.resetView();
               setModal(null);
               notify('New pumpkin created.');
