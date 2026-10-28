@@ -1,0 +1,9 @@
+node_modules/
+dist/
+output/
+progress.md
+.DS_Store
+*.tsbuildinfo
+*.local
+.env*
+!.env.example

@@ -1,0 +1,1499 @@
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  ArrowDownToLine,
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  ChevronDown,
+  CircleHelp,
+  Download,
+  Expand,
+  Film,
+  FolderOpen,
+  Hand,
+  Leaf,
+  Lightbulb,
+  LoaderCircle,
+  Moon,
+  Mouse,
+  MoveUpRight,
+  Pause,
+  Play,
+  Plus,
+  Redo2,
+  RotateCcw,
+  Save,
+  Scissors,
+  Sparkles,
+  Sun,
+  Undo2,
+  Upload,
+  X,
+  ZoomIn,
+  ZoomOut,
+} from 'lucide-react';
+import { StudioEngine } from './StudioEngine';
+import { templateCuts } from './geometry';
+import { PumpkinIcon, PumpkinThumbnail, ToolIllustration } from './illustrations';
+import {
+  cloneProject,
+  DEFAULT_PROJECT,
+  DEFAULT_SETTINGS,
+  SCOOPS_REQUIRED,
+  SHAPES,
+  validateProject,
+  type LightKind,
+  type Project,
+  type Stage,
+  type StudioSettings,
+  type Tool,
+} from './types';
+
+const STORAGE_KEY = 'hollow-pumpkin-v1';
+const GALLERY_KEY = 'hollow-gallery-v1';
+const STAGES: { id: Stage; title: string; short: string }[] = [
+  { id: 'pick', title: 'Pick a pumpkin', short: 'Pick' },
+  { id: 'prepare', title: 'Scoop it out', short: 'Scoop' },
+  { id: 'carve', title: 'Make your mark', short: 'Carve' },
+  { id: 'light', title: 'Light it up', short: 'Light' },
+];
+const TOOLS: { id: Tool; label: string; tip: string }[] = [
+  { id: 'knife', label: 'Lid knife', tip: 'Click your pumpkin to cut and lift the lid.' },
+  {
+    id: 'scoop',
+    label: 'Scoop',
+    tip: 'Drag upward from the open pumpkin to pull out the wet pulp.',
+  },
+  { id: 'cut', label: 'Carve', tip: 'Draw a loop on the skin. Release to cut out the shape.' },
+  {
+    id: 'stamp',
+    label: 'Cutters',
+    tip: 'Choose a shape, then click the pumpkin to press it through.',
+  },
+  { id: 'paint', label: 'Paint', tip: 'Drag across the pumpkin to leave textured brushstrokes.' },
+  {
+    id: 'marker',
+    label: 'Marker',
+    tip: 'Sketch your idea directly on the skin with permanent ink.',
+  },
+  { id: 'eraser', label: 'Eraser', tip: 'Rub away paint and marker. Undo restores carved pieces.' },
+];
+const COLORS = ['#f5e8c8', '#292d28', '#af4931', '#6b7855', '#a48abd', '#d9a538'];
+function loadProject() {
+  try {
+    const p = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+    if (validateProject(p)) return p;
+  } catch {
+    /* A fresh project is safe if storage is disabled or malformed. */
+  }
+  return cloneProject(DEFAULT_PROJECT);
+}
+function download(blob: Blob, name: string) {
+  const url = URL.createObjectURL(blob),
+    a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
+}
+function filename(project: Project) {
+  return (
+    project.name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '') || 'hollow-pumpkin'
+  );
+}
+interface GalleryItem {
+  id: string;
+  date: string;
+  project: Project;
+  image: string;
+}
+
+function Modal({
+  title,
+  children,
+  onClose,
+  wide = false,
+}: {
+  title: string;
+  children: ReactNode;
+  onClose: () => void;
+  wide?: boolean;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    const focusable = () => [
+      ...(ref.current?.querySelectorAll<HTMLElement>(
+        'button:not(:disabled), input, select, a[href], [tabindex="0"]',
+      ) || []),
+    ];
+    focusable()[0]?.focus();
+    const key = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      if (e.key === 'Tab') {
+        const nodes = focusable(),
+          first = nodes[0],
+          last = nodes[nodes.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last?.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first?.focus();
+        }
+      }
+    };
+    document.addEventListener('keydown', key);
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', key);
+      document.body.style.overflow = overflow;
+      previous?.focus();
+    };
+  }, [onClose]);
+  return (
+    <div
+      className="modal-backdrop"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        ref={ref}
+        className={`modal ${wide ? 'wide' : ''}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+      >
+        <div className="modal-heading">
+          <h2>{title}</h2>
+          <button className="icon-button" onClick={onClose} aria-label="Close dialog">
+            <X size={19} />
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+export default function App() {
+  const [project, setProject] = useState<Project>(loadProject);
+  const [settings, setSettings] = useState<StudioSettings>(() => ({
+    ...DEFAULT_SETTINGS,
+    stage: loadProject().stage,
+  }));
+  const projectRef = useRef(project),
+    settingsRef = useRef(settings);
+  projectRef.current = project;
+  settingsRef.current = settings;
+  const [past, setPast] = useState<Project[]>([]),
+    [future, setFuture] = useState<Project[]>([]);
+  const historyRef = useRef({ past, future });
+  historyRef.current = { past, future };
+  const [toast, setToast] = useState(''),
+    [ready, setReady] = useState(false),
+    [error, setError] = useState('');
+  const [modal, setModal] = useState<'help' | 'export' | 'gallery' | 'new' | null>(null);
+  const [gallery, setGallery] = useState<GalleryItem[]>(() => {
+    try {
+      const g = JSON.parse(localStorage.getItem(GALLERY_KEY) || '[]');
+      return Array.isArray(g) ? g.filter((v) => validateProject(v.project)).slice(0, 12) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [saveStatus, setSaveStatus] = useState('All changes saved');
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [exportEnv, setExportEnv] = useState<'day' | 'night'>('night'),
+    [duration, setDuration] = useState(8),
+    [quality, setQuality] = useState<'720' | '1080'>('1080');
+  const [recording, setRecording] = useState(false),
+    [progress, setProgress] = useState(0),
+    [exportError, setExportError] = useState('');
+  const engineRef = useRef<StudioEngine | null>(null),
+    hostRef = useRef<HTMLDivElement>(null),
+    workspaceRef = useRef<HTMLDivElement>(null),
+    importRef = useRef<HTMLInputElement>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const notify = useCallback((message: string) => {
+    setToast(message);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(''), 5200);
+  }, []);
+  const commit = useCallback((next: Project, _label = '') => {
+    if (JSON.stringify(next) === JSON.stringify(projectRef.current)) return;
+    const previous = cloneProject(projectRef.current);
+    setPast((p) => [...p.slice(-39), previous]);
+    setFuture([]);
+    setProject(next);
+  }, []);
+  const patch = (value: Partial<Project>, label?: string) =>
+    commit({ ...cloneProject(projectRef.current), ...value }, label);
+  const configure = (value: Partial<StudioSettings>) => setSettings((s) => ({ ...s, ...value }));
+  const undo = useCallback(() => {
+    const { past } = historyRef.current;
+    if (!past.length) return;
+    const current = cloneProject(projectRef.current),
+      previous = cloneProject(past[past.length - 1]);
+    setFuture((f) => [current, ...f]);
+    setProject(previous);
+    setPast(past.slice(0, -1));
+    if (current.stage !== previous.stage)
+      setSettings((s) => ({ ...s, stage: previous.stage, tool: 'orbit' }));
+    notify('Undid the last change.');
+  }, [notify]);
+  const redo = useCallback(() => {
+    const { future } = historyRef.current;
+    if (!future.length) return;
+    const current = cloneProject(projectRef.current),
+      next = cloneProject(future[0]);
+    setPast((p) => [...p, current]);
+    setProject(next);
+    setFuture(future.slice(1));
+    if (current.stage !== next.stage)
+      setSettings((s) => ({ ...s, stage: next.stage, tool: 'orbit' }));
+    notify('Redid the change.');
+  }, [notify]);
+
+  useEffect(() => {
+    if (!hostRef.current) return;
+    let engine: StudioEngine;
+    try {
+      engine = new StudioEngine(hostRef.current, projectRef.current, {
+        change: commit,
+        info: notify,
+        ready: () => setReady(true),
+      });
+      engineRef.current = engine;
+      engine.setSettings(settingsRef.current);
+      window.render_game_to_text = () => JSON.stringify(engine.getState());
+      window.advanceTime = (ms) => engine.advance(ms);
+    } catch (e) {
+      setError(
+        `We couldn’t start the 3D workshop. Enable hardware acceleration or try a WebGL2-capable browser. ${e instanceof Error ? e.message : ''}`,
+      );
+    }
+    return () => {
+      engine?.dispose();
+      engineRef.current = null;
+      delete window.render_game_to_text;
+      delete window.advanceTime;
+    };
+  }, [commit, notify]);
+  useEffect(() => {
+    engineRef.current?.setProject(project);
+  }, [project]);
+  useEffect(() => {
+    engineRef.current?.setSettings(settings);
+  }, [settings]);
+  useEffect(() => {
+    setSaveStatus('Saving…');
+    const timer = setTimeout(() => {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(project));
+        setSaveStatus('All changes saved');
+      } catch {
+        setSaveStatus('Save a project file to keep your work');
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [project]);
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        e.target instanceof HTMLSelectElement ||
+        modal
+      )
+        return;
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        e.shiftKey ? redo() : undo();
+      }
+      if (e.key.toLowerCase() === 'h') setSettings((s) => ({ ...s, tool: 'orbit' }));
+      if (e.key.toLowerCase() === 'f') {
+        if (document.fullscreenElement) void document.exitFullscreen();
+        else
+          void workspaceRef.current
+            ?.requestFullscreen()
+            .catch(() => notify('Fullscreen is unavailable in this browser.'));
+      }
+    };
+    document.addEventListener('keydown', key);
+    return () => document.removeEventListener('keydown', key);
+  }, [undo, redo, modal, notify]);
+
+  const stageIndex = STAGES.findIndex((s) => s.id === settings.stage);
+  const shape = SHAPES.find((s) => s.id === project.shape)!;
+  const goToStage = (stage: Stage) => {
+    if (
+      settings.mode === 'guided' &&
+      (stage === 'carve' || stage === 'light') &&
+      project.scoops < SCOOPS_REQUIRED
+    ) {
+      notify('First, cut the lid and scoop out the pulp. Freestyle lets you work in any order.');
+      return;
+    }
+    const tool: Tool =
+      stage === 'prepare'
+        ? project.opened
+          ? 'scoop'
+          : 'knife'
+        : stage === 'carve'
+          ? 'cut'
+          : 'orbit';
+    configure({ stage, tool, rotating: false });
+    setProject((p) => ({ ...p, stage }));
+  };
+  const chooseTool = (tool: Tool) => {
+    if (tool === 'knife' || tool === 'scoop') goToStage('prepare');
+    else if (settings.stage !== 'carve') {
+      if (settings.mode === 'guided' && project.scoops < SCOOPS_REQUIRED) {
+        notify('Prepare your pumpkin first, or choose Freestyle to jump right in.');
+        return;
+      }
+      goToStage('carve');
+    }
+    configure({ tool, rotating: false });
+  };
+  const liftLid = () => {
+    patch({ opened: true, lidOpen: !project.lidOpen });
+    if (!project.opened) configure({ tool: 'scoop' });
+  };
+  const scoop = () => {
+    if (!project.lidOpen) {
+      notify('Lift the lid first.');
+      return;
+    }
+    if (project.scoops < SCOOPS_REQUIRED) patch({ scoops: project.scoops + 1 });
+  };
+  const applyTemplate = (kind: 'classic' | 'cat' | 'celestial') => {
+    if (project.cuts.length > 140) {
+      notify('Save this pumpkin and start a new one to add more cuts.');
+      return;
+    }
+    patch({ cuts: [...project.cuts, ...templateCuts(kind)] });
+    engineRef.current?.resetView();
+    notify('A little inspiration, carved in. Add your own finishing touches.');
+  };
+  const chooseLight = (light: LightKind) => {
+    patch({ light });
+  };
+  const closeModal = useCallback(() => {
+    if (!recording) setModal(null);
+  }, [recording]);
+  const openExport = () => {
+    setExportEnv(settings.environment);
+    setExportError('');
+    setModal('export');
+  };
+  const saveToGallery = async () => {
+    try {
+      const blob = await engineRef.current?.snapshot();
+      if (!blob) return;
+      const image = await createImageBitmap(blob);
+      const canvas = document.createElement('canvas');
+      canvas.width = 420;
+      canvas.height = 280;
+      canvas.getContext('2d')!.drawImage(image, 0, 0, 420, 280);
+      image.close();
+      const item: GalleryItem = {
+        id: crypto.randomUUID(),
+        date: new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+        project: cloneProject(project),
+        image: canvas.toDataURL('image/jpeg', 0.7),
+      };
+      const items = [item, ...gallery].slice(0, 12);
+      localStorage.setItem(GALLERY_KEY, JSON.stringify(items));
+      setGallery(items);
+      notify('Saved to My pumpkins on this device.');
+    } catch {
+      notify(
+        'Device storage is full or unavailable. Download a project file to keep this pumpkin.',
+      );
+    }
+  };
+  const exportVideo = async () => {
+    if (!engineRef.current) return;
+    setRecording(true);
+    setProgress(0);
+    setExportError('');
+    try {
+      const result = await engineRef.current.recordVideo({
+        duration,
+        quality,
+        environment: exportEnv,
+        onProgress: setProgress,
+      });
+      download(result.blob, `${filename(project)}-${exportEnv}.${result.extension}`);
+      notify('Your rotating pumpkin video is ready.');
+    } catch (e) {
+      setExportError(e instanceof Error ? e.message : 'Video export failed.');
+    } finally {
+      setRecording(false);
+    }
+  };
+  const exportImage = async () => {
+    try {
+      const blob = await engineRef.current?.snapshot();
+      if (blob) {
+        download(blob, `${filename(project)}.png`);
+        notify('Snapshot downloaded in the current workshop lighting.');
+      }
+    } catch {
+      notify('The image could not be saved. Please try again.');
+    }
+  };
+  const importProject = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      if (file.size > 8_000_000) throw new Error('File too large');
+      const value: unknown = JSON.parse(await file.text());
+      if (!validateProject(value)) throw new Error('Invalid project');
+      commit(value, 'Imported project');
+      configure({ stage: value.stage, tool: 'orbit' });
+      setModal(null);
+      notify('Your pumpkin is back on the workbench.');
+    } catch {
+      notify(
+        'This file isn’t a valid Hollow project. Choose a .hollow.json file exported from the studio.',
+      );
+    }
+    if (importRef.current) importRef.current.value = '';
+  };
+
+  return (
+    <div className="app-shell">
+      <header className="site-header">
+        <a
+          className="wordmark"
+          href="#"
+          aria-label="Hollow home"
+          onClick={(e) => e.preventDefault()}
+        >
+          <PumpkinIcon size={34} />
+          <span>
+            hollow<span className="brand-dot">.</span>
+          </span>
+          <span className="brand-description">a pumpkin carving studio</span>
+        </a>
+        <nav aria-label="Main navigation">
+          <button className="nav-link active" onClick={() => setModal(null)}>
+            The workshop
+          </button>
+          <button className="nav-link" onClick={() => setModal('gallery')}>
+            My pumpkins <span className="count-badge">{gallery.length}</span>
+          </button>
+          <button
+            className="help-button"
+            onClick={() => setModal('help')}
+            aria-label="How it works"
+          >
+            <CircleHelp size={19} />
+          </button>
+        </nav>
+      </header>
+      <main>
+        <section className="intro">
+          <div>
+            <div className="eyebrow">
+              <span className="tiny-line" /> YOUR OWN LITTLE AUTUMN RITUAL
+            </div>
+            <h1>
+              A little mess. <em>A little magic.</em>
+            </h1>
+            <p>Pick a pumpkin. Make it yours. Let it glow.</p>
+          </div>
+          <div className="season-note">
+            <Leaf size={21} strokeWidth={1.3} />
+            <span>
+              Good things take a little carving.<small>NO MESS TO CLEAN UP, THOUGH.</small>
+            </span>
+          </div>
+        </section>
+        <div className="workshop-bar">
+          <div className="workshop-label">
+            <span className="status-dot" /> THE WORKSHOP <span className="bar-divider" />{' '}
+            <span className="session-label">A fresh canvas, endless possibilities.</span>
+          </div>
+          <div className="mode-switch" role="group" aria-label="Carving mode">
+            <button
+              className={settings.mode === 'guided' ? 'selected' : ''}
+              aria-pressed={settings.mode === 'guided'}
+              onClick={() => configure({ mode: 'guided' })}
+            >
+              <Sparkles size={13} /> Guided
+            </button>
+            <button
+              className={settings.mode === 'freestyle' ? 'selected' : ''}
+              aria-pressed={settings.mode === 'freestyle'}
+              onClick={() => {
+                configure({ mode: 'freestyle' });
+                notify('Your workshop, your rules. Pick any step or tool.');
+              }}
+            >
+              Freestyle <MoveUpRight size={12} />
+            </button>
+          </div>
+        </div>
+        <div className="workspace" ref={workspaceRef}>
+          <div className="left-workspace">
+            <div className="scene-card">
+              <div className="stepper" aria-label="Carving steps">
+                {STAGES.map((s, i) => (
+                  <button
+                    key={s.id}
+                    className={`step ${settings.stage === s.id ? 'current' : ''} ${i < stageIndex ? 'done' : ''}`}
+                    onClick={() => goToStage(s.id)}
+                    aria-label={s.title}
+                    aria-current={settings.stage === s.id ? 'step' : undefined}
+                  >
+                    <span className="step-number">
+                      {i < stageIndex ? <Check size={12} /> : `0${i + 1}`}
+                    </span>
+                    <span className="step-title">{s.title}</span>
+                    <span className="step-short">{s.short}</span>
+                    {i < 3 && <span className="step-connector" />}
+                  </button>
+                ))}
+              </div>
+              <div className={`viewport ${settings.environment === 'night' ? 'night' : ''}`}>
+                <div ref={hostRef} className="canvas-host" />
+                {!ready && !error && (
+                  <div className="loading-scene">
+                    <LoaderCircle className="spin" size={25} />
+                    <span>Setting out the tools…</span>
+                  </div>
+                )}
+                {error && (
+                  <div className="scene-error">
+                    <PumpkinIcon size={48} />
+                    <h3>A little graphics hiccup.</h3>
+                    <p>{error}</p>
+                    <button className="primary" onClick={() => window.location.reload()}>
+                      Try again
+                    </button>
+                  </div>
+                )}
+                <div className="scene-top">
+                  <span className="scene-label">
+                    <span className="live-dot" /> YOUR PUMPKIN, IN 3D
+                  </span>
+                  <div className="light-switch" role="group" aria-label="Scene lighting">
+                    <button
+                      className={settings.environment === 'day' ? 'selected' : ''}
+                      aria-pressed={settings.environment === 'day'}
+                      onClick={() => configure({ environment: 'day' })}
+                    >
+                      <Sun size={14} /> Daylight
+                    </button>
+                    <button
+                      className={settings.environment === 'night' ? 'selected' : ''}
+                      aria-pressed={settings.environment === 'night'}
+                      onClick={() => configure({ environment: 'night' })}
+                    >
+                      <Moon size={13} /> Night
+                    </button>
+                  </div>
+                </div>
+                <div className="scene-side">
+                  <button
+                    className="floating-button"
+                    onClick={() => engineRef.current?.zoom(1)}
+                    aria-label="Zoom in"
+                    title="Zoom in"
+                  >
+                    <ZoomIn size={17} />
+                  </button>
+                  <button
+                    className="floating-button"
+                    onClick={() => engineRef.current?.zoom(-1)}
+                    aria-label="Zoom out"
+                    title="Zoom out"
+                  >
+                    <ZoomOut size={17} />
+                  </button>
+                  <span />
+                  <button
+                    className="floating-button"
+                    onClick={() => engineRef.current?.resetView()}
+                    aria-label="Reset view"
+                    title="Front view"
+                  >
+                    <RotateCcw size={16} />
+                  </button>
+                  <button
+                    className="floating-button"
+                    onClick={() => configure({ rotating: !settings.rotating, tool: 'orbit' })}
+                    aria-label={settings.rotating ? 'Pause rotation' : 'Rotate pumpkin'}
+                    aria-pressed={settings.rotating}
+                  >
+                    {settings.rotating ? <Pause size={16} /> : <Play size={16} />}
+                  </button>
+                </div>
+                <div className="scene-bottom">
+                  <div className="view-hint">
+                    <Mouse size={15} />
+                    <span>
+                      {settings.tool === 'orbit'
+                        ? 'Drag to rotate'
+                        : settings.tool === 'scoop'
+                          ? 'Drag up to pull out pulp'
+                          : settings.tool === 'knife'
+                            ? 'Click to cut the lid'
+                            : settings.tool === 'stamp'
+                              ? 'Click to press your cutter'
+                              : settings.tool === 'cut'
+                                ? 'Draw a loop, release to cut'
+                                : 'Drag to make your mark'}
+                      <b>·</b>
+                      {settings.tool === 'orbit' ? 'Scroll to zoom' : 'Right-drag to rotate'}
+                    </span>
+                  </div>
+                  <div className="scene-history">
+                    <button
+                      className="floating-button"
+                      disabled={!past.length}
+                      onClick={undo}
+                      aria-label="Undo"
+                      title="Undo (⌘/Ctrl Z)"
+                    >
+                      <Undo2 size={16} />
+                    </button>
+                    <button
+                      className="floating-button"
+                      disabled={!future.length}
+                      onClick={redo}
+                      aria-label="Redo"
+                      title="Redo (⌘/Ctrl Shift Z)"
+                    >
+                      <Redo2 size={16} />
+                    </button>
+                    <button
+                      className={`floating-button ${settings.tool === 'orbit' ? 'active' : ''}`}
+                      onClick={() => configure({ tool: 'orbit' })}
+                      aria-label="Rotate by hand"
+                      title="Rotate by hand (H)"
+                    >
+                      <Hand size={16} />
+                    </button>
+                    <button
+                      className="floating-button"
+                      onClick={() => {
+                        if (document.fullscreenElement) void document.exitFullscreen();
+                        else
+                          void workspaceRef.current
+                            ?.requestFullscreen()
+                            .catch(() => notify('Fullscreen is unavailable.'));
+                      }}
+                      aria-label="Fullscreen"
+                    >
+                      <Expand size={15} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="tool-shelf">
+              <div className="tool-shelf-label">
+                <span className="eyebrow">THE TOOLBOX</span>
+                <p>
+                  A little help
+                  <br />
+                  for your hands.
+                </p>
+              </div>
+              <div className="shelf-tools">
+                {TOOLS.map((t) => (
+                  <button
+                    key={t.id}
+                    className={`shelf-tool ${settings.tool === t.id ? 'selected' : ''}`}
+                    onClick={() => chooseTool(t.id)}
+                    title={t.tip}
+                    aria-label={t.label}
+                    aria-pressed={settings.tool === t.id}
+                  >
+                    <ToolIllustration tool={t.id} />
+                    <span>{t.label}</span>
+                    {settings.tool === t.id && <span className="tool-dot" />}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="canvas-footer">
+              <span>
+                <span className="saved-dot" />
+                {saveStatus}
+              </span>
+              <button onClick={() => setModal('new')}>
+                <Plus size={13} /> Start fresh
+              </button>
+              <button onClick={() => setModal('help')}>
+                <CircleHelp size={13} /> A few helpful hints
+              </button>
+            </div>
+          </div>
+          <aside className="sidebar">
+            <div className="sidebar-content">
+              <div className="panel-eyebrow">
+                <span>STEP 0{stageIndex + 1}</span>
+                <span>
+                  {settings.mode === 'guided' ? 'A LITTLE GUIDANCE' : 'MAKE YOUR OWN RULES'}
+                </span>
+              </div>
+              {settings.stage === 'pick' && (
+                <>
+                  <h2>Meet your pumpkin.</h2>
+                  <p className="panel-description">
+                    Big plans start with a good pumpkin.
+                    <br />
+                    Which one feels like you?
+                  </p>
+                  <div className="shape-list">
+                    {SHAPES.map((s) => (
+                      <button
+                        key={s.id}
+                        className={`shape-option ${project.shape === s.id ? 'selected' : ''}`}
+                        onClick={() => patch({ shape: s.id })}
+                        aria-pressed={project.shape === s.id}
+                      >
+                        <PumpkinThumbnail shape={s.id} />
+                        <span>
+                          <strong>{s.name}</strong>
+                          <small>{s.subtitle}</small>
+                        </span>
+                        <span className="radio-indicator">
+                          {project.shape === s.id && <Check size={10} />}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="little-note">
+                    <Leaf size={18} />
+                    <p>
+                      A few quirks. A little character.
+                      <br />
+                      Every pumpkin is a good pumpkin.
+                    </p>
+                  </div>
+                </>
+              )}
+              {settings.stage === 'prepare' && (
+                <>
+                  <h2>A little messy magic.</h2>
+                  <p className="panel-description">
+                    Lift the lid, then pull out the stringy bits.
+                    <br />A clean canvas is worth the scoop.
+                  </p>
+                  <div className="prep-illustration">
+                    <ToolIllustration tool={project.opened ? 'scoop' : 'knife'} />
+                    <div>
+                      <strong>
+                        {!project.opened
+                          ? 'Start at the top.'
+                          : project.scoops < SCOOPS_REQUIRED
+                            ? 'Get a little stuck in.'
+                            : 'Beautifully hollow.'}
+                      </strong>
+                      <p>
+                        {!project.opened
+                          ? 'Use the lid knife on your pumpkin, or cut the lid below.'
+                          : project.scoops < SCOOPS_REQUIRED
+                            ? 'With the scoop selected, drag upward from the open pumpkin.'
+                            : 'All the pulp is out. Time to give this pumpkin a personality.'}
+                      </p>
+                    </div>
+                  </div>
+                  <button className="secondary full" onClick={liftLid}>
+                    {project.lidOpen ? <ArrowDownToLine size={16} /> : <Scissors size={16} />}{' '}
+                    {project.lidOpen
+                      ? 'Replace lid'
+                      : project.opened
+                        ? 'Lift lid'
+                        : 'Cut & lift the lid'}
+                  </button>
+                  <div className="scoop-progress">
+                    <div>
+                      <span>THE STRINGY STUFF</span>
+                      <strong>
+                        {project.scoops} / {SCOOPS_REQUIRED} scoops
+                      </strong>
+                    </div>
+                    <div className="progress-track">
+                      <div style={{ width: `${(project.scoops / SCOOPS_REQUIRED) * 100}%` }} />
+                    </div>
+                    <p>
+                      {project.scoops === SCOOPS_REQUIRED
+                        ? 'Cleaned out. Nicely done.'
+                        : 'Seeds, strings, and all the slippery bits.'}
+                    </p>
+                  </div>
+                  <button
+                    className="secondary full"
+                    disabled={!project.lidOpen || project.scoops === SCOOPS_REQUIRED}
+                    onClick={scoop}
+                  >
+                    <Hand size={16} />{' '}
+                    {project.scoops === SCOOPS_REQUIRED ? 'All scooped out' : 'Pull out a scoop'}
+                  </button>
+                  <div className="little-note">
+                    <Sparkles size={18} />
+                    <p>
+                      Try the view from above.
+                      <br />
+                      <button
+                        className="inline-link"
+                        onClick={() => engineRef.current?.resetView('top')}
+                      >
+                        Take a peek inside <ArrowRight size={12} />
+                      </button>
+                    </p>
+                  </div>
+                </>
+              )}
+              {settings.stage === 'carve' && (
+                <>
+                  <h2>
+                    A face. A feeling.
+                    <br />
+                    <em>A little you.</em>
+                  </h2>
+                  <p className="panel-description">
+                    There’s no wrong way to make a mark.
+                    <br />
+                    Your tools are just below the pumpkin.
+                  </p>
+                  <div className="active-tool-card">
+                    <ToolIllustration tool={settings.tool} />
+                    <div>
+                      <span className="eyebrow">IN YOUR HAND</span>
+                      <strong>
+                        {TOOLS.find((t) => t.id === settings.tool)?.label || 'Rotate by hand'}
+                      </strong>
+                      <p>
+                        {TOOLS.find((t) => t.id === settings.tool)?.tip ||
+                          'Drag to find your pumpkin’s best side.'}
+                      </p>
+                    </div>
+                  </div>
+                  {settings.tool === 'stamp' && (
+                    <>
+                      <label className="field-label">CHOOSE A CUTTER</label>
+                      <div className="stamp-grid">
+                        {(
+                          ['triangle', 'circle', 'star', 'heart', 'crescent', 'diamond'] as const
+                        ).map((s) => (
+                          <button
+                            key={s}
+                            className={settings.stamp === s ? 'selected' : ''}
+                            aria-label={`${s} cutter`}
+                            aria-pressed={settings.stamp === s}
+                            onClick={() => configure({ stamp: s })}
+                          >
+                            <span>
+                              {
+                                {
+                                  triangle: '△',
+                                  circle: '○',
+                                  star: '☆',
+                                  heart: '♡',
+                                  crescent: '☾',
+                                  diamond: '◇',
+                                }[s]
+                              }
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  {['paint', 'marker'].includes(settings.tool) && (
+                    <>
+                      <label className="field-label">A SPLASH OF COLOR</label>
+                      <div className="color-palette">
+                        {COLORS.map((c) => (
+                          <button
+                            key={c}
+                            className={settings.color === c ? 'selected' : ''}
+                            style={{ background: c }}
+                            aria-label={`Use color ${c}`}
+                            aria-pressed={settings.color === c}
+                            onClick={() => configure({ color: c })}
+                          >
+                            {settings.color === c && (
+                              <Check size={13} color={c === '#f5e8c8' ? '#333' : '#fff'} />
+                            )}
+                          </button>
+                        ))}
+                        <label className="custom-color" title="Custom color">
+                          <Plus size={14} />
+                          <input
+                            type="color"
+                            aria-label="Custom color"
+                            value={settings.color}
+                            onChange={(e) => configure({ color: e.target.value })}
+                          />
+                        </label>
+                      </div>
+                    </>
+                  )}
+                  {['stamp', 'paint', 'marker', 'eraser'].includes(settings.tool) && (
+                    <div className="range-field">
+                      <label htmlFor="tool-size">
+                        {settings.tool === 'stamp' ? 'Cutter size' : 'Stroke width'}
+                        <span>{settings.size}</span>
+                      </label>
+                      <input
+                        id="tool-size"
+                        type="range"
+                        min="10"
+                        max="70"
+                        value={settings.size}
+                        onChange={(e) => configure({ size: +e.target.value })}
+                      />
+                      <div className="range-ends">
+                        <span>A little detail</span>
+                        <span>A bold statement</span>
+                      </div>
+                    </div>
+                  )}
+                  <button
+                    className="template-toggle"
+                    onClick={() => setTemplatesOpen(!templatesOpen)}
+                    aria-expanded={templatesOpen}
+                  >
+                    <span>
+                      <Sparkles size={14} /> Need a little inspiration?
+                    </span>
+                    <ChevronDown size={14} className={templatesOpen ? 'turned' : ''} />
+                  </button>
+                  {templatesOpen && (
+                    <div className="template-options">
+                      <button onClick={() => applyTemplate('classic')}>
+                        <span>☻</span>The classic grin
+                        <Plus size={13} />
+                      </button>
+                      <button onClick={() => applyTemplate('cat')}>
+                        <span>♧</span>A curious cat
+                        <Plus size={13} />
+                      </button>
+                      <button onClick={() => applyTemplate('celestial')}>
+                        <span>☾</span>Moon & stars
+                        <Plus size={13} />
+                      </button>
+                      <small>Templates add real cuts to the front. Undo any time.</small>
+                    </div>
+                  )}
+                  <button
+                    className="text-action"
+                    onClick={() => {
+                      if (project.opened) patch({ lidOpen: !project.lidOpen });
+                      else notify('Cut your lid in the Scoop step first.');
+                    }}
+                  >
+                    {project.lidOpen ? 'Replace the lid' : 'Lift the lid'} <ArrowRight size={13} />
+                  </button>
+                </>
+              )}
+              {settings.stage === 'light' && (
+                <>
+                  <h2>
+                    Let your little
+                    <br />
+                    <em>light shine.</em>
+                  </h2>
+                  <p className="panel-description">
+                    The finishing touch. A soft flicker,
+                    <br />a warm glow, a little autumn magic.
+                  </p>
+                  <label className="field-label">CHOOSE YOUR GLOW</label>
+                  <div className="light-options">
+                    {(
+                      [
+                        {
+                          id: 'tealight',
+                          icon: '◉',
+                          title: 'The little tealight',
+                          text: 'Small flame, warm heart',
+                        },
+                        {
+                          id: 'pillar',
+                          icon: '▥',
+                          title: 'The wax candle',
+                          text: 'A taller, dancing flame',
+                        },
+                        {
+                          id: 'amber',
+                          icon: '✦',
+                          title: 'Amber glow',
+                          text: 'A steady golden LED',
+                        },
+                        {
+                          id: 'violet',
+                          icon: '✧',
+                          title: 'Something spellbinding',
+                          text: 'A little violet LED magic',
+                        },
+                        { id: 'none', icon: '○', title: 'Unlit', text: 'Lovely just as it is' },
+                      ] as const
+                    ).map((l) => (
+                      <button
+                        key={l.id}
+                        className={project.light === l.id ? 'selected' : ''}
+                        onClick={() => chooseLight(l.id)}
+                        aria-pressed={project.light === l.id}
+                      >
+                        <span className={`light-icon ${l.id}`}>{l.icon}</span>
+                        <span>
+                          <strong>{l.title}</strong>
+                          <small>{l.text}</small>
+                        </span>
+                        <span className="radio-indicator">
+                          {project.light === l.id && <Check size={10} />}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="range-field">
+                    <label htmlFor="brightness">
+                      A little glow, or a lot
+                      <span>{Math.round((project.brightness / 3) * 100)}%</span>
+                    </label>
+                    <input
+                      id="brightness"
+                      type="range"
+                      min=".2"
+                      max="3"
+                      step=".1"
+                      value={project.brightness}
+                      onChange={(e) => patch({ brightness: +e.target.value })}
+                      disabled={project.light === 'none'}
+                    />
+                  </div>
+                  {['tealight', 'pillar'].includes(project.light) && (
+                    <div className="range-field compact">
+                      <label htmlFor="flicker">
+                        Flame flicker<span>{Math.round(project.flicker * 100)}%</span>
+                      </label>
+                      <input
+                        id="flicker"
+                        type="range"
+                        min="0"
+                        max="1"
+                        step=".05"
+                        value={project.flicker}
+                        onChange={(e) => patch({ flicker: +e.target.value })}
+                      />
+                    </div>
+                  )}
+                  <div className="light-bottom-actions">
+                    <button
+                      className="text-action"
+                      onClick={() =>
+                        configure({ environment: settings.environment === 'day' ? 'night' : 'day' })
+                      }
+                    >
+                      <Moon size={13} />
+                      {settings.environment === 'day' ? 'See it after dark' : 'Back to daylight'}
+                    </button>
+                    {project.opened && (
+                      <button
+                        className="text-action"
+                        onClick={() => patch({ lidOpen: !project.lidOpen })}
+                      >
+                        {project.lidOpen ? 'Replace lid' : 'Lift lid'}
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="panel-footer">
+              {settings.stage === 'pick' ? (
+                <>
+                  <div className="selected-pumpkin">
+                    <span>YOUR PICK</span>
+                    <strong>
+                      {shape.name}
+                      <span> · {shape.label}</span>
+                    </strong>
+                  </div>
+                  <button className="primary full" onClick={() => goToStage('prepare')}>
+                    This is the one <ArrowRight size={17} />
+                  </button>
+                </>
+              ) : settings.stage === 'prepare' ? (
+                <>
+                  <button
+                    className="primary full"
+                    disabled={settings.mode === 'guided' && project.scoops < SCOOPS_REQUIRED}
+                    onClick={() => {
+                      goToStage('carve');
+                      if (project.lidOpen) patch({ lidOpen: false, stage: 'carve' });
+                    }}
+                  >
+                    Let’s make a mark <ArrowRight size={17} />
+                  </button>
+                  <button className="back-step" onClick={() => goToStage('pick')}>
+                    <ArrowLeft size={12} /> Back to the patch
+                  </button>
+                </>
+              ) : settings.stage === 'carve' ? (
+                <>
+                  <button
+                    className="primary full"
+                    onClick={() => {
+                      goToStage('light');
+                      if (project.light === 'none')
+                        patch({ light: 'tealight', lidOpen: false, stage: 'light' });
+                    }}
+                  >
+                    Bring it to life <Sparkles size={16} />
+                  </button>
+                  <button className="back-step" onClick={() => goToStage('prepare')}>
+                    <ArrowLeft size={12} /> Back to scooping
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button className="primary full" onClick={openExport}>
+                    <Film size={16} /> Keep a little magic <ArrowRight size={16} />
+                  </button>
+                  <button className="back-step" onClick={saveToGallery}>
+                    <Save size={13} /> Save to My pumpkins
+                  </button>
+                </>
+              )}
+            </div>
+          </aside>
+        </div>
+        <section className="under-workshop">
+          <div>
+            <Sparkles size={17} />
+            <p>A small tradition. An entirely new canvas.</p>
+          </div>
+          <button onClick={openExport}>
+            Made something you love?{' '}
+            <span>
+              Take it with you <ArrowUpRightIcon />
+            </span>
+          </button>
+        </section>
+      </main>
+      <footer className="site-footer">
+        <span>
+          <PumpkinIcon size={18} /> A little hollow. A whole lot of heart.
+        </span>
+        <span>MADE FOR THE JOY OF MAKING.</span>
+        <button onClick={() => setModal('help')}>
+          Stay curious. Get carving. <Leaf size={13} />
+        </button>
+      </footer>
+      <input
+        ref={importRef}
+        type="file"
+        accept=".json,.hollow.json"
+        hidden
+        onChange={(e) => void importProject(e.target.files?.[0])}
+      />
+      {toast && (
+        <div className="toast" role="status">
+          <span>
+            <Check size={15} />
+          </span>
+          <p>{toast}</p>
+          <button onClick={() => setToast('')} aria-label="Dismiss notification">
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
+      {modal === 'help' && (
+        <Modal title="A little help for your hands." onClose={closeModal}>
+          <p className="modal-intro">A quiet corner to make something entirely yours.</p>
+          <div className="help-steps">
+            {[
+              {
+                title: 'Find your pumpkin.',
+                text: 'Pick from five shapes and colors. Drag the pumpkin to see every side; scroll to get closer.',
+                icon: <PumpkinIcon size={24} />,
+              },
+              {
+                title: 'Make a little mess.',
+                text: 'Cut and lift the lid. Use the scoop and drag upward to pull out six clumps of slippery pulp and seeds.',
+                icon: <Scissors size={21} />,
+              },
+              {
+                title: 'Give it a little personality.',
+                text: 'Draw a loop with Carve and release to make a real opening. Press in cutters, brush on paint, or sketch with a marker. Right-drag to rotate while using a tool.',
+                icon: <Sparkles size={22} />,
+              },
+              {
+                title: 'Let it glow.',
+                text: 'Choose a candle or LED, try the night preview, and download a full rotating video or a still image.',
+                icon: <Lightbulb size={22} />,
+              },
+            ].map((s, i) => (
+              <div key={s.title}>
+                <span>{s.icon}</span>
+                <div>
+                  <strong>
+                    0{i + 1} — {s.title}
+                  </strong>
+                  <p>{s.text}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="help-note">
+            <strong>Your pace. Your process.</strong>
+            <p>
+              Guided takes you through each step. Freestyle lets you choose any tool in any order.
+              Your current pumpkin saves on this device. Download a project file to keep an editable
+              copy.
+            </p>
+          </div>
+          <div className="shortcuts">
+            <span>
+              <kbd>H</kbd> Rotate
+            </span>
+            <span>
+              <kbd>F</kbd> Fullscreen
+            </span>
+            <span>
+              <kbd>⌘ / Ctrl Z</kbd> Undo
+            </span>
+          </div>
+          <button className="primary full" onClick={closeModal}>
+            Back to the good stuff <ArrowRight size={16} />
+          </button>
+        </Modal>
+      )}
+      {modal === 'export' && (
+        <Modal title="Keep a little magic." onClose={closeModal}>
+          <p className="modal-intro">A full turn around your one-of-a-kind creation.</p>
+          <div className="export-preview">
+            <PumpkinThumbnail shape={project.shape} />
+            <div>
+              <strong>{project.name}</strong>
+              <span>
+                {shape.name} · {project.cuts.length} cuts · {project.strokes.length} strokes
+              </span>
+            </div>
+            <Film size={21} />
+          </div>
+          <div className="export-fields">
+            <label className="field-label" htmlFor="project-name">
+              GIVE IT A NAME
+            </label>
+            <input
+              className="text-input"
+              id="project-name"
+              maxLength={120}
+              value={project.name}
+              disabled={recording}
+              onChange={(e) => setProject((p) => ({ ...p, name: e.target.value }))}
+            />
+            <span className="field-label">THE LIGHTING</span>
+            <div className="export-light">
+              <button
+                disabled={recording}
+                className={exportEnv === 'day' ? 'selected' : ''}
+                aria-pressed={exportEnv === 'day'}
+                onClick={() => setExportEnv('day')}
+              >
+                <Sun size={19} />
+                <strong>Golden daylight</strong>
+                <small>Every little detail</small>
+              </button>
+              <button
+                disabled={recording}
+                className={exportEnv === 'night' ? 'selected' : ''}
+                aria-pressed={exportEnv === 'night'}
+                onClick={() => setExportEnv('night')}
+              >
+                <Moon size={18} />
+                <strong>After dark</strong>
+                <small>Let that glow shine</small>
+              </button>
+            </div>
+            <div className="export-selects">
+              <label>
+                One full rotation
+                <select
+                  disabled={recording}
+                  value={duration}
+                  onChange={(e) => setDuration(+e.target.value)}
+                >
+                  <option value={6}>6 seconds</option>
+                  <option value={8}>8 seconds</option>
+                  <option value={12}>12 seconds</option>
+                </select>
+              </label>
+              <label>
+                A little more detail
+                <select
+                  disabled={recording}
+                  value={quality}
+                  onChange={(e) => setQuality(e.target.value as '720' | '1080')}
+                >
+                  <option value="1080">1080p · Full HD</option>
+                  <option value="720">720p · Smaller file</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          {exportError && (
+            <p className="export-error" role="alert">
+              {exportError}
+            </p>
+          )}
+          {recording ? (
+            <div className="recording-progress">
+              <div>
+                <span>
+                  <span className="record-dot" />
+                  Making your film…
+                </span>
+                <strong>{Math.round(progress * 100)}%</strong>
+              </div>
+              <div className="progress-track">
+                <div style={{ width: `${progress * 100}%` }} />
+              </div>
+              <p>Keep this tab in view while your pumpkin takes a turn.</p>
+              <button className="text-action" onClick={() => engineRef.current?.cancelExport()}>
+                Cancel recording
+              </button>
+            </div>
+          ) : (
+            <>
+              <button className="primary full" onClick={exportVideo} disabled={!ready}>
+                <Download size={16} /> Download rotating video
+              </button>
+              <p className="export-footnote">
+                16:9 · 30 fps target · MP4 or WebM, depending on your browser.
+                <br />
+                PNG snapshots use the current workshop view and lighting.
+              </p>
+              <div className="export-other">
+                <button onClick={exportImage}>
+                  <ArrowDownToLine size={15} /> Save a PNG
+                </button>
+                <button
+                  onClick={() => {
+                    download(
+                      new Blob([JSON.stringify(project, null, 2)], { type: 'application/json' }),
+                      `${filename(project)}.hollow.json`,
+                    );
+                    notify('Editable project downloaded.');
+                  }}
+                >
+                  <Save size={15} /> Save project
+                </button>
+              </div>
+            </>
+          )}
+        </Modal>
+      )}
+      {modal === 'gallery' && (
+        <Modal title="Your little pumpkin patch." onClose={closeModal} wide>
+          <p className="modal-intro">
+            A few things you’ve made. A little magic worth keeping.
+            <br />
+            <small>Saved on this device. Keep project files for a lasting copy.</small>
+          </p>
+          <div className="gallery-actions">
+            <button className="secondary" onClick={saveToGallery}>
+              <Plus size={15} /> Save current pumpkin
+            </button>
+            <button className="secondary" onClick={() => importRef.current?.click()}>
+              <Upload size={15} /> Open project file
+            </button>
+          </div>
+          {!gallery.length ? (
+            <div className="empty-gallery">
+              <PumpkinIcon size={60} />
+              <h3>A patch full of possibilities.</h3>
+              <p>Your saved pumpkins will grow here.</p>
+            </div>
+          ) : (
+            <div className="gallery-grid">
+              {gallery.map((item) => (
+                <button
+                  key={item.id}
+                  className="gallery-card"
+                  onClick={() => {
+                    commit(cloneProject(item.project), 'Opened saved pumpkin');
+                    configure({ stage: item.project.stage, tool: 'orbit' });
+                    setModal(null);
+                    notify('Saved pumpkin opened. Undo returns to your previous work.');
+                  }}
+                >
+                  <img src={item.image} alt={item.project.name} />
+                  <span>
+                    <strong>{item.project.name}</strong>
+                    <small>
+                      {item.date} · {SHAPES.find((s) => s.id === item.project.shape)?.name}
+                    </small>
+                  </span>
+                  <FolderOpen size={16} />
+                </button>
+              ))}
+            </div>
+          )}
+        </Modal>
+      )}
+      {modal === 'new' && (
+        <Modal title="A fresh little beginning." onClose={closeModal}>
+          <p className="modal-intro">
+            Start with a new pumpkin. You can undo this, or tuck your current creation into My
+            pumpkins first.
+          </p>
+          <div className="new-pumpkin">
+            <PumpkinThumbnail shape="classic" />
+          </div>
+          <button
+            className="primary full"
+            onClick={() => {
+              commit(cloneProject(DEFAULT_PROJECT), 'Started fresh');
+              configure({ ...DEFAULT_SETTINGS });
+              engineRef.current?.resetView();
+              setModal(null);
+              notify('A fresh pumpkin, just for you.');
+            }}
+          >
+            Back to the pumpkin patch <ArrowRight size={16} />
+          </button>
+          <button
+            className="secondary full spaced"
+            onClick={async () => {
+              await saveToGallery();
+              closeModal();
+            }}
+          >
+            <Save size={15} /> Save this pumpkin first
+          </button>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function ArrowUpRightIcon() {
+  return <MoveUpRight size={13} />;
+}
+
+declare global {
+  interface Window {
+    render_game_to_text?: () => string;
+    advanceTime?: (ms: number) => void;
+  }
+}
