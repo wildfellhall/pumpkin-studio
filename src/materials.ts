@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { Stroke } from './types';
+import type { Engraving, Stroke } from './types';
 
 export function rng(seed: number) {
   let t = seed;
@@ -58,9 +58,9 @@ export function createSkinTextures() {
         noise(x / 11, y / 16) * 0.28 +
         noise(x / 3, y / 3) * 0.15 +
         hash(x, y) * 0.09;
-      const streak = noise(x / 5, y / 130);
-      const freckle = hash(x * 2, y * 2) > 0.993 ? 20 : 0;
-      const c = 204 + n * 45 + streak * 7 - freckle;
+      const streak = noise(x / 5, y / 130),
+        freckle = hash(x * 2, y * 2) > 0.993 ? 20 : 0;
+      const c = 194 + n * 53 + streak * 7 - freckle;
       colorData.data.set([Math.min(255, c + 8), c, c - n * 12, 255], i);
       const b = 80 + n * 110 + hash(x, y) * 30;
       bumpData.data.set([b, b, b, 255], i);
@@ -71,72 +71,208 @@ export function createSkinTextures() {
   bctx.putImageData(bumpData, 0, 0);
   rctx.putImageData(roughData, 0, 0);
   const painted = canvas(2048, 1024),
-    paintTexture = texture(painted);
+    relief = canvas(2048, 1024),
+    finish = canvas(2048, 1024),
+    depth = canvas(2048, 1024);
   return {
     base,
+    baseBump: bump,
+    baseRoughness: rough,
     painted,
-    map: paintTexture,
-    bumpMap: texture(bump, false),
-    roughnessMap: texture(rough, false),
+    relief,
+    finish,
+    depth,
+    map: texture(painted),
+    bumpMap: texture(relief, false),
+    roughnessMap: texture(finish, false),
+    displacementMap: texture(depth, false),
+    layers: [canvas(2048, 1024), canvas(2048, 1024), canvas(2048, 1024), canvas(2048, 1024)],
   };
+}
+export type SurfaceTextures = ReturnType<typeof createSkinTextures>;
+
+/** Flat bristle footprint. Pigment coverage, microrelief and finish share one alpha mask. */
+const stampCache = new Map<string, HTMLCanvasElement[]>();
+function paintStamp(color: string, seed: number, marker = false) {
+  const key = `${color}-${seed}-${marker}`;
+  const cached = stampCache.get(key);
+  if (cached) return cached;
+  const maps = [canvas(96, 96), canvas(96, 96), canvas(96, 96)];
+  const rgb = [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16));
+  for (let channel = 0; channel < 3; channel++) {
+    const ctx = maps[channel].getContext('2d')!,
+      data = ctx.createImageData(96, 96);
+    for (let y = 0; y < 96; y++)
+      for (let x = 0; x < 96; x++) {
+        const nx = (x - 47.5) / 48,
+          ny = (y - 47.5) / 48;
+        const bristle = noise(y * 0.85 + seed, 1),
+          grain = hash(x + seed, y),
+          edge = 0.87 + noise(y * 0.31, seed) * 0.13;
+        const footprint = marker
+          ? Math.max(0, 1 - Math.pow(nx * nx + ny * ny, 8))
+          : Math.max(
+              0,
+              Math.min(1, (edge - Math.pow(Math.abs(nx), 4) - Math.pow(Math.abs(ny), 6)) * 7),
+            );
+        const dryGap = bristle < 0.25 ? 0.17 : 1;
+        const alpha =
+          footprint *
+          (marker ? 0.3 + grain * 0.24 : (0.32 + bristle * 0.56) * dryGap) *
+          (grain > 0.96 ? 0.55 : 1);
+        const ridge = bristle * 0.65 + grain * 0.35;
+        const colorValues =
+          channel === 0
+            ? rgb.map((v) => Math.max(0, Math.min(255, v * (0.85 + ridge * 0.2))))
+            : channel === 1
+              ? [152 + ridge * 74, 152 + ridge * 74, 152 + ridge * 74]
+              : [115 + grain * 65, 115 + grain * 65, 115 + grain * 65];
+        data.data.set([...colorValues, alpha * 255], (y * 96 + x) * 4);
+      }
+    ctx.putImageData(data, 0, 0);
+  }
+  if (stampCache.size >= 80) stampCache.delete(stampCache.keys().next().value!);
+  stampCache.set(key, maps);
+  return maps;
 }
 
 export function renderPaint(
-  base: HTMLCanvasElement,
-  target: HTMLCanvasElement,
+  surface: SurfaceTextures,
   strokes: Stroke[],
+  engravings: Engraving[],
   tint: string,
 ) {
-  const ctx = target.getContext('2d')!,
-    w = target.width,
-    h = target.height;
-  ctx.globalCompositeOperation = 'source-over';
-  ctx.globalAlpha = 1;
-  ctx.fillStyle = tint;
-  ctx.fillRect(0, 0, w, h);
-  ctx.globalCompositeOperation = 'multiply';
-  ctx.drawImage(base, 0, 0, w, h);
-  ctx.globalCompositeOperation = 'source-over';
-  const layer = canvas(w, h),
-    lc = layer.getContext('2d')!;
-  for (const s of strokes) {
-    const random = rng(s.seed),
-      size = s.size * 0.95;
-    lc.globalCompositeOperation = s.kind === 'eraser' ? 'destination-out' : 'source-over';
-    lc.strokeStyle = s.color;
-    lc.fillStyle = s.color;
-    lc.lineCap = 'round';
-    lc.lineJoin = 'round';
+  const { painted, relief, finish, depth } = surface,
+    w = painted.width,
+    h = painted.height;
+  const color = painted.getContext('2d')!,
+    bump = relief.getContext('2d')!,
+    rough = finish.getContext('2d')!,
+    displace = depth.getContext('2d')!;
+  color.globalCompositeOperation = 'source-over';
+  color.globalAlpha = 1;
+  color.fillStyle = tint;
+  color.fillRect(0, 0, w, h);
+  color.globalCompositeOperation = 'multiply';
+  color.drawImage(surface.base, 0, 0, w, h);
+  color.globalCompositeOperation = 'source-over';
+  bump.globalCompositeOperation = 'source-over';
+  bump.drawImage(surface.baseBump, 0, 0, w, h);
+  rough.globalCompositeOperation = 'source-over';
+  rough.drawImage(surface.baseRoughness, 0, 0, w, h);
+  displace.fillStyle = '#808080';
+  displace.fillRect(0, 0, w, h);
+  // Scraped flesh stays intact. Tapered strokes alter surface depth as well as its color.
+  for (const e of engravings) {
+    const random = rng(e.seed),
+      width = e.size * (e.kind === 'gouge' ? 0.48 : 1.5);
     for (const offset of [-w, 0, w]) {
-      if (!s.points.length) continue;
-      const drawPath = (dx: number, dy: number) => {
-        lc.beginPath();
-        s.points.forEach(([u, v], i) => {
+      const draw = (ctx: CanvasRenderingContext2D, lw: number, c: string, dx = 0) => {
+        ctx.beginPath();
+        e.points.forEach(([u, v], i) => {
           const x = u * w + offset + dx,
-            y = (1 - v) * h + dy;
-          if (!i) lc.moveTo(x, y);
-          else lc.lineTo(x, y);
+            y = (1 - v) * h;
+          if (i) ctx.lineTo(x, y);
+          else ctx.moveTo(x, y);
         });
-        if (s.points.length === 1) {
-          const [u, v] = s.points[0];
-          lc.lineTo(u * w + offset + dx + 0.1, (1 - v) * h + dy);
-        }
-        lc.stroke();
+        if (e.points.length === 1)
+          ctx.lineTo(e.points[0][0] * w + offset + 0.1, (1 - e.points[0][1]) * h);
+        ctx.strokeStyle = c;
+        ctx.lineWidth = lw;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.stroke();
       };
-      lc.globalAlpha = s.kind === 'marker' ? 0.72 : 0.96;
-      lc.lineWidth = s.kind === 'marker' ? size * 0.34 : size;
-      drawPath(0, 0);
-      if (s.kind === 'paint') {
-        lc.globalAlpha = 0.16;
-        for (let i = 0; i < 20; i++) {
-          lc.lineWidth = 0.35 + random() * 1.4;
-          lc.strokeStyle = i % 3 ? s.color : '#fff8df';
-          drawPath((random() - 0.5) * size * 0.9, (random() - 0.5) * size * 0.6);
+      draw(color, width, '#a75e24');
+      draw(color, width * 0.78, '#e8ac54');
+      draw(color, width * 0.28, '#f2c471');
+      draw(displace, width, '#707070');
+      draw(displace, width * 0.72, '#444444');
+      draw(displace, width * 0.32, e.kind === 'gouge' ? '#171717' : '#303030');
+      draw(bump, width, '#777777');
+      draw(bump, width * 0.72, '#484848');
+      draw(bump, width * 0.32, '#202020');
+      draw(rough, width, '#b5b5b5');
+      if (e.kind === 'scraper')
+        for (let i = 0; i < 13; i++) {
+          const dx = (random() - 0.5) * width * 0.75;
+          draw(color, 0.35 + random() * 0.8, i % 3 ? '#d99843' : '#f8cc86', dx);
+          draw(bump, 0.5 + random(), '#696969', dx);
+        }
+    }
+  }
+  // Decoration is isolated so erasing restores the original rind or carved flesh beneath it.
+  const layers = surface.layers;
+  const contexts = layers.map((c) => c.getContext('2d')!);
+  contexts.forEach((c) => {
+    c.globalCompositeOperation = 'source-over';
+    c.clearRect(0, 0, w, h);
+  });
+  for (const s of strokes) {
+    const size = s.size * (s.kind === 'marker' ? 0.4 : 1.35),
+      stamps = paintStamp(s.color, s.seed, s.kind === 'marker');
+    if (s.kind === 'eraser') {
+      for (const offset of [-w, 0, w])
+        for (const ctx of contexts) {
+          ctx.globalCompositeOperation = 'destination-out';
+          ctx.lineWidth = size;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          ctx.strokeStyle = '#000';
+          ctx.beginPath();
+          s.points.forEach(([u, v], i) => {
+            if (i) ctx.lineTo(u * w + offset, (1 - v) * h);
+            else ctx.moveTo(u * w + offset, (1 - v) * h);
+          });
+          if (s.points.length === 1)
+            ctx.lineTo(s.points[0][0] * w + offset + 0.1, (1 - s.points[0][1]) * h);
+          ctx.stroke();
+        }
+      continue;
+    }
+    contexts.forEach((c) => (c.globalCompositeOperation = 'source-over'));
+    for (let i = 0; i < s.points.length; i++) {
+      const prev = s.points[Math.max(0, i - 1)],
+        point = s.points[i];
+      const dx = (point[0] - prev[0]) * w,
+        dy = -(point[1] - prev[1]) * h;
+      const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / Math.max(1.1, size * 0.09))),
+        angle = Math.atan2(dy, dx);
+      for (let j = 0; j < steps; j++) {
+        const t = (j + 1) / steps,
+          x = prev[0] * w + dx * t,
+          y = (1 - prev[1]) * h + dy * t;
+        for (const offset of [-w, 0, w]) {
+          if (x + offset < -size || x + offset > w + size) continue;
+          contexts.forEach((ctx, k) => {
+            // Marker changes color and finish, but does not create a thick paint ridge.
+            if (s.kind === 'marker' && (k === 1 || k === 3)) return;
+            ctx.save();
+            ctx.translate(x + offset, y);
+            ctx.rotate(angle);
+            ctx.drawImage(stamps[k === 3 ? 1 : k], -size * 0.36, -size * 0.5, size * 0.72, size);
+            ctx.restore();
+          });
         }
       }
     }
   }
-  ctx.drawImage(layer, 0, 0);
+  [color, bump, rough, displace].forEach((ctx, i) => ctx.drawImage(layers[i], 0, 0));
+}
+
+export function tissueTexture() {
+  const c = canvas(256, 256),
+    ctx = c.getContext('2d')!,
+    img = ctx.createImageData(256, 256);
+  for (let y = 0; y < 256; y++)
+    for (let x = 0; x < 256; x++) {
+      const fib = noise(x / 2.5 + Math.sin(y * 0.05) * 2, y / 32),
+        grain = hash(x, y);
+      const n = 140 + fib * 90 + grain * 20;
+      img.data.set([n, n * 0.91, n * 0.65, 255], (y * 256 + x) * 4);
+    }
+  ctx.putImageData(img, 0, 0);
+  return texture(c);
 }
 
 export function woodTexture() {

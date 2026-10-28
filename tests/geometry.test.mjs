@@ -7,6 +7,7 @@ import {
   surfacePoint,
   templateCuts,
   unionCuts,
+  sawCuts,
 } from '../src/geometry.ts';
 import { SHAPES, DEFAULT_PROJECT, validateProject } from '../src/types.ts';
 
@@ -90,6 +91,75 @@ test('project validation accepts roundtrips and rejects oversized or malformed i
       ...DEFAULT_PROJECT,
       strokes: [{ kind: 'paint', color: 'url(javascript:1)', points: [], size: 20, seed: 4 }],
     }),
+    false,
+  );
+});
+
+test('the saw creates a continuous through-slot with round joins and respects a changed width', () => {
+  const path = [
+    [0.46, 0.49],
+    [0.507, 0.55],
+    [0.56, 0.52],
+  ];
+  const narrow = sawCuts(path, 15),
+    wide = sawCuts(path, 60);
+  assert.equal(narrow.length, 1);
+  assert.equal(wide.length, 1);
+  const material = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
+  const make = (cuts) =>
+    new THREE.Mesh(buildShell(SHAPES[0], cuts), [material, material, material]);
+  const n = make(narrow),
+    w = make(wide);
+  const radialRay = (u, v) => {
+    const outer = surfacePoint(SHAPES[0], u, v);
+    const direction = surfacePoint(SHAPES[0], u, v, 0.115).sub(outer).normalize();
+    return new THREE.Raycaster(outer.clone().addScaledVector(direction, -1), direction);
+  };
+  for (const [u, v] of path) {
+    const ray = radialRay(u, v);
+    assert.ok(ray.intersectObject(n)[0].distance > 2.4, 'the saw opens the entire gesture');
+  }
+  const atEdge = radialRay(0.507, 0.565);
+  assert.ok(atEdge.intersectObject(n)[0].distance < 1.1, 'narrow kerf leaves neighboring rind');
+  assert.ok(atEdge.intersectObject(w)[0].distance > 2.4, 'wider kerf removes neighboring rind');
+  n.geometry.dispose();
+  w.geometry.dispose();
+  material.dispose();
+});
+
+test('surface carving data survives project serialization and older projects still load', () => {
+  const project = {
+    ...DEFAULT_PROJECT,
+    engravings: [
+      {
+        kind: 'gouge',
+        points: [
+          [0.45, 0.6],
+          [0.55, 0.6],
+        ],
+        size: 30,
+        seed: 123,
+      },
+      { kind: 'scraper', points: [[0.5, 0.5]], size: 55, seed: 456 },
+    ],
+  };
+  assert.ok(validateProject(JSON.parse(JSON.stringify(project))));
+  const legacy = { ...DEFAULT_PROJECT };
+  delete legacy.engravings;
+  assert.ok(validateProject(legacy));
+  assert.equal(
+    validateProject({ ...project, engravings: [{ ...project.engravings[0], size: -5 }] }),
+    false,
+  );
+  assert.equal(
+    validateProject({
+      ...project,
+      engravings: [{ ...project.engravings[0], points: [[NaN, 0.5]] }],
+    }),
+    false,
+  );
+  assert.equal(
+    validateProject({ ...project, engravings: [{ ...project.engravings[0], kind: 'unknown' }] }),
     false,
   );
 });

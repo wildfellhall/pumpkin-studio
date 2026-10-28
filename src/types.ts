@@ -1,6 +1,18 @@
 export type UV = [number, number];
 export type Stage = 'pick' | 'prepare' | 'carve' | 'light';
-export type Tool = 'orbit' | 'knife' | 'scoop' | 'cut' | 'stamp' | 'paint' | 'marker' | 'eraser';
+export type Tool =
+  | 'orbit'
+  | 'knife'
+  | 'scoop'
+  | 'cut'
+  | 'saw'
+  | 'drill'
+  | 'gouge'
+  | 'scraper'
+  | 'stamp'
+  | 'paint'
+  | 'marker'
+  | 'eraser';
 export type Stamp = 'triangle' | 'circle' | 'star' | 'heart' | 'crescent' | 'diamond';
 export type LightKind = 'tealight' | 'pillar' | 'amber' | 'violet' | 'none';
 export type ShapeId = 'classic' | 'tall' | 'heirloom' | 'ghost' | 'sage';
@@ -13,63 +25,57 @@ export interface PumpkinShape {
   ribs: number;
   ribDepth: number;
   color: string;
-  label: string;
 }
 export const SHAPES: PumpkinShape[] = [
   {
     id: 'classic',
-    name: 'The Classic',
-    subtitle: 'Round & ready for anything',
+    name: 'Classic',
+    subtitle: 'Round · orange rind',
     radius: 1.31,
     height: 1.2,
     ribs: 10,
     ribDepth: 0.1,
     color: '#d96b14',
-    label: 'A patch favorite',
   },
   {
     id: 'tall',
-    name: 'The Tall One',
-    subtitle: 'A little more personality',
+    name: 'Tall',
+    subtitle: 'Elongated · orange rind',
     radius: 1.04,
     height: 1.55,
     ribs: 11,
     ribDepth: 0.075,
     color: '#dc6922',
-    label: 'Room to get creative',
   },
   {
     id: 'heirloom',
-    name: 'The Heirloom',
-    subtitle: 'Low, lovely & deeply ribbed',
+    name: 'Heirloom',
+    subtitle: 'Flattened · deep ribs',
     radius: 1.48,
     height: 0.93,
     ribs: 12,
     ribDepth: 0.14,
     color: '#c95a2b',
-    label: 'Perfectly imperfect',
   },
   {
     id: 'ghost',
-    name: 'The Ghost',
-    subtitle: 'A pale canvas for bold ideas',
+    name: 'Ghost',
+    subtitle: 'Round · ivory rind',
     radius: 1.26,
     height: 1.14,
     ribs: 9,
     ribDepth: 0.065,
     color: '#e5dfbd',
-    label: 'Something a little different',
   },
   {
     id: 'sage',
-    name: 'The Sage',
-    subtitle: 'Earthy with a wild side',
+    name: 'Sage',
+    subtitle: 'Flattened · green rind',
     radius: 1.38,
     height: 1.01,
     ribs: 11,
     ribDepth: 0.12,
     color: '#9ea88b',
-    label: 'An autumn original',
   },
 ];
 export interface Stroke {
@@ -79,12 +85,19 @@ export interface Stroke {
   kind: 'paint' | 'marker' | 'eraser';
   seed: number;
 }
+export interface Engraving {
+  points: UV[];
+  size: number;
+  kind: 'gouge' | 'scraper';
+  seed: number;
+}
 export interface Project {
   version: 1;
   name: string;
   shape: ShapeId;
   cuts: UV[][];
   strokes: Stroke[];
+  engravings?: Engraving[];
   lidOpen: boolean;
   opened: boolean;
   scoops: number;
@@ -106,10 +119,11 @@ export interface StudioSettings {
 }
 export const DEFAULT_PROJECT: Project = {
   version: 1,
-  name: 'My little jack-o’-lantern',
+  name: 'Untitled pumpkin',
   shape: 'classic',
   cuts: [],
   strokes: [],
+  engravings: [],
   lidOpen: false,
   opened: false,
   scoops: 0,
@@ -163,6 +177,21 @@ export function validateProject(value: unknown): value is Project {
         s.points.length <= 10000 &&
         s.points.every(uv),
     ) &&
+    (p.engravings === undefined ||
+      (Array.isArray(p.engravings) &&
+        p.engravings.length <= 500 &&
+        p.engravings.every(
+          (e) =>
+            ['gouge', 'scraper'].includes(e.kind) &&
+            Number.isFinite(e.size) &&
+            e.size >= 1 &&
+            e.size <= 100 &&
+            Number.isFinite(e.seed) &&
+            Array.isArray(e.points) &&
+            e.points.length > 0 &&
+            e.points.length <= 1000 &&
+            e.points.every(uv),
+        ))) &&
     typeof p.opened === 'boolean' &&
     typeof p.lidOpen === 'boolean' &&
     Number.isInteger(p.scoops) &&

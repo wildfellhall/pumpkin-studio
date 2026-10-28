@@ -53,21 +53,21 @@ try {
   await page.waitForFunction(() => window.render_game_to_text);
   await expectState({ stage: 'pick', mode: 'guided', shape: 'classic', cuts: 0 });
   await screenshot('01-welcome');
-  await click('The Tall One', false);
+  await click('Tall', false);
   await expectState({ shape: 'tall' });
-  await click('The Heirloom', false);
+  await click('Heirloom', false);
   await expectState({ shape: 'heirloom' });
-  await click('The Ghost', false);
+  await click('Ghost', false);
   await expectState({ shape: 'ghost' });
   await screenshot('02-ghost');
-  await click('The Sage', false);
+  await click('Sage', false);
   await expectState({ shape: 'sage' });
-  await click('The Classic', false);
+  await click('Classic', false);
   await expectState({ shape: 'classic' });
   console.log('Five pumpkin varieties verified.');
-  await click('Make your mark');
+  await click('Carve & paint');
   await expectState({ stage: 'pick' });
-  await click('This is the one');
+  await click('Use this pumpkin');
   await expectState({ stage: 'prepare', tool: 'knife' });
   // The actual canvas gesture opens the lid.
   await drag([
@@ -88,7 +88,7 @@ try {
     await click('Pull out a scoop');
     await expectState({ scoops: i + 1 });
   }
-  await click('Let’s make a mark');
+  await click('Start carving');
   await expectState({ stage: 'carve', lidOpen: false });
   console.log('Lid and scoop gestures verified.');
   // User-drawn, closed freehand polygon.
@@ -149,16 +149,57 @@ try {
   await click('Undo');
   await expectState({ strokes: 0 });
   console.log('Freehand cutting, cutters, paint, marker, eraser, and undo/redo verified.');
-  await click('Need a little inspiration?');
-  await click('☻ The classic grin');
+  await click('Carving templates');
+  await click('☻ Classic face');
   await expectState({ cuts: 4 });
   await screenshot('06-carved-day');
-  await click('Bring it to life');
+  await click('Saw');
+  await page.locator('#tool-size').fill('35');
+  await drag([
+    [0.42, 0.42],
+    [0.43, 0.47],
+    [0.44, 0.51],
+  ]);
+  await expectState({ cuts: 5 });
+  await screenshot('06a-saw');
+  await click('Undo');
+  await expectState({ cuts: 4 });
+  await click('Drill');
+  await drag([
+    [0.5, 0.37],
+    [0.5, 0.37],
+  ]);
+  await expectState({ cuts: 5 });
+  await screenshot('06b-drill');
+  await click('Undo');
+  await expectState({ cuts: 4 });
+  await click('V-gouge');
+  await page.locator('#tool-size').fill('50');
+  await drag([
+    [0.43, 0.35],
+    [0.46, 0.32],
+    [0.49, 0.35],
+  ]);
+  await expectState({ engravings: 1, cuts: 4 });
+  await click('Scraper');
+  await page.locator('#tool-size').fill('55');
+  await drag([
+    [0.53, 0.35],
+    [0.57, 0.32],
+  ]);
+  await expectState({ engravings: 2, cuts: 4 });
+  await screenshot('06c-surface-tools');
+  await click('Undo');
+  await expectState({ engravings: 1 });
+  await click('Redo');
+  await expectState({ engravings: 2 });
+  console.log('Saw, drill, V-gouge, and scraper verified.');
+  await click('Add lighting');
   await expectState({ stage: 'light', light: 'tealight' });
   await click('Night');
   await expectState({ environment: 'night' });
   await screenshot('07-candle-night');
-  await click('▥ The wax candle A taller, dancing flame');
+  await click('▥ Pillar candle Tall wax candle');
   await expectState({ light: 'pillar' });
   await page.locator('#flicker').fill('0.9');
   await page.locator('#brightness').fill('1.7');
@@ -166,19 +207,19 @@ try {
   await page.waitForFunction(() => JSON.parse(window.render_game_to_text()).rotation > 0.1);
   await click('Pause rotation');
   await click('Reset view');
-  await click('✧ Something spellbinding A little violet LED magic');
+  await click('✧ Violet LED Steady violet light');
   await expectState({ light: 'violet' });
   await screenshot('08-violet');
-  await click('✦ Amber glow A steady golden LED');
+  await click('✦ Amber LED Steady warm light');
   await expectState({ light: 'amber' });
-  await click('◉ The little tealight Small flame, warm heart');
+  await click('◉ Tealight Low candle flame');
   await click('Save to My pumpkins');
   await page.getByRole('button', { name: /My pumpkins 1/ }).click();
   assert.equal(await page.locator('.gallery-card').count(), 1);
   await click('Close dialog');
-  await click('Keep a little magic');
+  await click('Export pumpkin');
   await page.locator('#project-name').fill('Test lantern');
-  await page.getByLabel('A little more detail').selectOption('720');
+  await page.getByLabel('Resolution').selectOption('720');
   await page.getByLabel('One full rotation').selectOption('6');
   await screenshot('09-export');
   const projectDownload = page.waitForEvent('download');
@@ -189,17 +230,18 @@ try {
     await fs.readFile(path.join(output, 'test-lantern.hollow.json'), 'utf8'),
   );
   assert.equal(savedProject.cuts.length, 4);
+  assert.equal(savedProject.engravings.length, 2);
   assert.equal(savedProject.scoops, 6);
   const pngDownload = page.waitForEvent('download');
   await click('Save a PNG');
   await (await pngDownload).saveAs(path.join(output, 'test-lantern.png'));
   // Record night, then day. Validate that state and viewport are restored after each export.
   for (const [label, env] of [
-    ['After dark Let that glow shine', 'night'],
-    ['Golden daylight Every little detail', 'day'],
+    ['Night Candlelight & shadows', 'night'],
+    ['Daylight Neutral work light', 'day'],
   ]) {
     await click(label);
-    await page.getByLabel('A little more detail').selectOption(env === 'day' ? '1080' : '720');
+    await page.getByLabel('Resolution').selectOption(env === 'day' ? '1080' : '720');
     const videoDownload = page.waitForEvent('download', { timeout: 60000 });
     await click('Download rotating video');
     const video = await videoDownload;
@@ -218,23 +260,23 @@ try {
   await page.waitForTimeout(600);
   await page.reload();
   await page.waitForFunction(() => window.render_game_to_text);
-  await expectState({ cuts: 4, scoops: 6, light: 'tealight', stage: 'light' });
+  await expectState({ cuts: 4, scoops: 6, light: 'tealight', stage: 'light', engravings: 2 });
   await click('Start fresh');
-  await click('Back to the pumpkin patch');
+  await click('Create new pumpkin');
   await expectState({ cuts: 0, scoops: 0, stage: 'pick' });
   await click('Undo');
   await expectState({ cuts: 4, scoops: 6 });
   await click('Start fresh');
-  await click('Back to the pumpkin patch');
+  await click('Create new pumpkin');
   await page.getByRole('button', { name: /My pumpkins 1/ }).click();
   await page
     .locator('input[type=file]')
     .setInputFiles(path.join(output, 'test-lantern.hollow.json'));
   await expectState({ cuts: 4, scoops: 6, stage: 'light' });
   await click('Start fresh');
-  await click('Back to the pumpkin patch');
+  await click('Create new pumpkin');
   await click('Freestyle');
-  await click('Make your mark');
+  await click('Carve & paint');
   await expectState({ stage: 'carve', mode: 'freestyle', scoops: 0 });
   await click('Cutters');
   await click('heart cutter');
@@ -254,9 +296,9 @@ try {
   assert.ok(
     await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
   );
-  await click('Light it up');
+  await click('Lighting');
   await expectState({ stage: 'light' });
-  await click('◉ The little tealight Small flame, warm heart');
+  await click('◉ Tealight Low candle flame');
   await click('Night');
   await screenshot('12-mobile-night');
   assert.equal(errors.length, 0, errors.join('\n'));
@@ -280,6 +322,11 @@ try {
           'eraser',
           'undo/redo',
           'template',
+          'saw',
+          'drill',
+          'V-gouge',
+          'scraper',
+          'engraving persistence',
           '4 lights',
           'flicker and brightness',
           'rotation',

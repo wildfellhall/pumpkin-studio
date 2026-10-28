@@ -5,7 +5,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { buildShell, LID_V, stampPolygon, surfacePoint } from './geometry';
+import { buildShell, LID_V, sawCuts, stampPolygon, surfacePoint } from './geometry';
 import {
   createFlameMaterial,
   createSkinTextures,
@@ -21,6 +21,7 @@ import {
   SHAPES,
   SCOOPS_REQUIRED,
   type Project,
+  type Engraving,
   type StudioSettings,
   type Stroke,
   type UV,
@@ -56,7 +57,7 @@ export class StudioEngine {
     roughness: 0.68,
     clearcoat: 0.19,
     clearcoatRoughness: 0.32,
-    bumpScale: 0.016,
+    bumpScale: 0.032,
   });
   private pulp = new THREE.MeshPhysicalMaterial({
     color: '#e5a339',
@@ -88,6 +89,7 @@ export class StudioEngine {
   private raycaster = new THREE.Raycaster();
   private points: UV[] = [];
   private activeStroke: Stroke | null = null;
+  private activeEngraving: Engraving | null = null;
   private previewTimer = 0;
   private scoopStart = -100;
   private scoopIndex = -1;
@@ -170,6 +172,7 @@ export class StudioEngine {
       new THREE.CylinderGeometry(2.34, 2.36, 0.1, 100),
       new THREE.MeshStandardMaterial({
         map: wood,
+        color: '#6c5147',
         roughness: 0.74,
         bumpMap: wood,
         bumpScale: 0.012,
@@ -223,6 +226,9 @@ export class StudioEngine {
     this.skin.map = this.skinTextures.map;
     this.skin.bumpMap = this.skinTextures.bumpMap;
     this.skin.roughnessMap = this.skinTextures.roughnessMap;
+    this.skin.displacementMap = this.skinTextures.displacementMap;
+    this.skin.displacementScale = 0.09;
+    this.skin.displacementBias = -0.045;
     this.pulp.bumpMap = this.skinTextures.bumpMap;
     this.pulp.bumpScale = 0.035;
     // Environment maps cannot know the cavity is enclosed. Reduce only indirect
@@ -337,22 +343,33 @@ export class StudioEngine {
     this.body.geometry.dispose();
     this.body.geometry = geometry;
   }
-  private updatePaint(extra?: Stroke) {
+  private updatePaint(extra?: Stroke, engraving?: Engraving) {
     renderPaint(
-      this.skinTextures.base,
-      this.skinTextures.painted,
+      this.skinTextures,
       extra ? [...this.currentProject.strokes, extra] : this.currentProject.strokes,
+      engraving
+        ? [...(this.currentProject.engravings || []), engraving]
+        : this.currentProject.engravings || [],
       this.currentShape.color,
     );
-    this.skinTextures.map.needsUpdate = true;
+    for (const map of [
+      this.skinTextures.map,
+      this.skinTextures.bumpMap,
+      this.skinTextures.roughnessMap,
+      this.skinTextures.displacementMap,
+    ])
+      map.needsUpdate = true;
   }
   private updateGuts() {
     this.guts.children.forEach((clump, i) => {
       const removed = i < this.currentProject.scoops;
-      if (i === this.scoopIndex && this.time - this.scoopStart < 1.3) return;
-      clump.visible = !removed;
-      clump.position.copy(clump.userData.home);
-      clump.scale.setScalar(1);
+      if (i === this.scoopIndex && this.time - this.scoopStart < 2) return;
+      clump.visible = !removed || this.settings.stage === 'prepare';
+      clump.position.copy(removed ? clump.userData.pile : clump.userData.home);
+      clump.scale.set(removed ? 0.55 : 1, removed ? 0.3 : 1, removed ? 0.55 : 1);
+      clump.rotation.z = removed ? -0.2 : 0;
+      const drips = clump.getObjectByName('drips');
+      if (drips) drips.visible = false;
     });
   }
   private updateLid(immediate = false) {
@@ -467,12 +484,18 @@ export class StudioEngine {
       this.makeCandle();
     } else {
       if (JSON.stringify(project.cuts) !== JSON.stringify(previous.cuts)) this.updateGeometry();
-      if (JSON.stringify(project.strokes) !== JSON.stringify(previous.strokes)) this.updatePaint();
+      if (
+        JSON.stringify(project.strokes) !== JSON.stringify(previous.strokes) ||
+        JSON.stringify(project.engravings) !== JSON.stringify(previous.engravings)
+      )
+        this.updatePaint();
       if (project.light !== previous.light) this.makeCandle();
       if (project.scoops !== previous.scoops) {
         if (project.scoops === previous.scoops + 1) {
           this.scoopIndex = previous.scoops;
           this.scoopStart = this.time;
+        } else {
+          this.scoopIndex = -1;
         }
         this.updateGuts();
       }
@@ -499,6 +522,7 @@ export class StudioEngine {
     this.renderer.domElement.style.cursor = settings.tool === 'orbit' ? 'grab' : 'crosshair';
     this.tool.visible = settings.toolVisible;
     if (settings.stage !== old.stage) {
+      this.updateGuts();
       if (settings.stage === 'prepare') this.resetView('top');
       if (settings.stage === 'carve') this.resetView('front');
       if (settings.stage === 'light') this.resetView('front');
@@ -507,14 +531,14 @@ export class StudioEngine {
   private setEnvironment(environment: 'day' | 'night') {
     this.environment = environment;
     const night = environment === 'night';
-    const bg = new THREE.Color(night ? '#101824' : '#eae5db');
+    const bg = new THREE.Color(night ? '#0d0914' : '#201721');
     this.scene.background = bg;
     this.scene.fog = new THREE.FogExp2(bg, 0.05);
-    (this.floor.material as THREE.MeshStandardMaterial).color.set(night ? '#333d48' : '#e7e1d5');
-    this.hemi.intensity = night ? 0.1 : 0.65;
+    (this.floor.material as THREE.MeshStandardMaterial).color.set(night ? '#17111f' : '#241a24');
+    this.hemi.intensity = night ? 0.16 : 0.55;
     this.key.intensity = night ? 0.15 : 2.35;
-    this.key.color.set(night ? '#b8d0ff' : '#fff4de');
-    this.fill.intensity = night ? 0.4 : 0.65;
+    this.key.color.set(night ? '#bca3f0' : '#ffebcf');
+    this.fill.intensity = night ? 0.5 : 0.85;
     this.scene.environmentIntensity = night ? 0.12 : 0.32;
     this.bloom.strength = night ? 0.37 : 0.08;
     this.bloom.threshold = night ? 0.8 : 1.2;
@@ -570,7 +594,10 @@ export class StudioEngine {
     if (e.button !== 0 || this.settings.tool === 'orbit' || !this.allowed()) return;
     const uv = this.uvFromHit(e);
     if (!uv) return;
-    if (this.settings.tool === 'cut' && (uv[1] > 0.79 || uv[1] < 0.04)) {
+    if (
+      ['cut', 'saw', 'gouge', 'scraper'].includes(this.settings.tool) &&
+      (uv[1] > 0.79 || uv[1] < 0.04)
+    ) {
       this.callbacks.info('Draw your opening on the side of the pumpkin, below the lid.');
       return;
     }
@@ -604,7 +631,7 @@ export class StudioEngine {
       this.scoopIndex = this.currentProject.scoops;
       this.toolActive = true;
     }
-    if (this.settings.tool === 'stamp') {
+    if (this.settings.tool === 'stamp' || this.settings.tool === 'drill') {
       if (uv[1] > 0.76 || uv[1] < 0.1) {
         this.callbacks.info('Place your cutter on the side of the pumpkin.');
         this.clearGesture();
@@ -618,10 +645,25 @@ export class StudioEngine {
         return;
       }
       const p = cloneProject(this.currentProject);
-      p.cuts.push(stampPolygon(this.settings.stamp, uv, this.settings.size));
+      p.cuts.push(
+        stampPolygon(
+          this.settings.tool === 'drill' ? 'circle' : this.settings.stamp,
+          uv,
+          this.settings.size * (this.settings.tool === 'drill' ? 0.45 : 1),
+        ),
+      );
       this.callbacks.change(p, 'Pressed a cutter');
       this.clearGesture();
       return;
+    }
+    if (this.settings.tool === 'gouge' || this.settings.tool === 'scraper') {
+      this.activeEngraving = {
+        points: [uv],
+        size: this.settings.size,
+        kind: this.settings.tool,
+        seed: Math.floor(Math.random() * 100000),
+      };
+      this.updatePaint(undefined, this.activeEngraving);
     }
     if (['paint', 'marker', 'eraser'].includes(this.settings.tool)) {
       this.activeStroke = {
@@ -650,9 +692,14 @@ export class StudioEngine {
         }
       }
     }
-    if (!this.drawing || ['knife', 'stamp', 'scoop'].includes(this.settings.tool)) return;
+    if (!this.drawing || ['knife', 'stamp', 'drill', 'scoop'].includes(this.settings.tool)) return;
     const uv = this.uvFromHit(e);
-    if (!uv || uv[1] > (this.settings.tool === 'cut' ? 0.79 : 0.98) || uv[1] < 0.04) return;
+    if (
+      !uv ||
+      uv[1] > (['cut', 'saw', 'gouge', 'scraper'].includes(this.settings.tool) ? 0.79 : 0.98) ||
+      uv[1] < 0.04
+    )
+      return;
     const previous = this.points[this.points.length - 1];
     if (Math.hypot(uv[0] - previous[0], uv[1] - previous[1]) < 0.0015) return;
     if (this.points.length >= 900) return;
@@ -663,7 +710,13 @@ export class StudioEngine {
         this.updatePaint(this.activeStroke);
         this.previewTimer = performance.now();
       }
-    } else if (this.settings.tool === 'cut') {
+    } else if (this.activeEngraving) {
+      this.activeEngraving.points = [...this.points];
+      if (performance.now() - this.previewTimer > 48) {
+        this.updatePaint(undefined, this.activeEngraving);
+        this.previewTimer = performance.now();
+      }
+    } else if (this.settings.tool === 'cut' || this.settings.tool === 'saw') {
       this.line.geometry.dispose();
       this.line.geometry = new THREE.BufferGeometry().setFromPoints(
         this.points.map((p) => surfacePoint(this.currentShape, ...p).multiplyScalar(1.002)),
@@ -690,6 +743,20 @@ export class StudioEngine {
           this.settings.tool === 'eraser' ? 'Erased a mark' : 'Added a stroke',
         );
       }
+    } else if (this.activeEngraving) {
+      if ((p.engravings?.length || 0) < 500) {
+        p.engravings = [...(p.engravings || []), this.activeEngraving];
+        this.callbacks.change(p, 'Carved the surface');
+      } else
+        this.callbacks.info(
+          'Surface stroke limit reached. Save the project before starting another.',
+        );
+    } else if (this.settings.tool === 'saw') {
+      const cuts = sawCuts(this.points, this.settings.size);
+      if (p.cuts.length + cuts.length <= 150) {
+        p.cuts.push(...cuts);
+        this.callbacks.change(p, 'Sawed a slot');
+      } else this.callbacks.info('Cut limit reached. Save the project before starting another.');
     } else if (this.settings.tool === 'cut') {
       if (this.points.length >= 4 && p.cuts.length < 150) {
         let area = 0;
@@ -713,6 +780,7 @@ export class StudioEngine {
     this.drawing = false;
     this.points = [];
     this.activeStroke = null;
+    this.activeEngraving = null;
     this.controls.enabled = !this.exporting;
     this.line.geometry.dispose();
     this.line.geometry = new THREE.BufferGeometry();
@@ -738,8 +806,10 @@ export class StudioEngine {
   private tick(dt: number) {
     this.time += dt;
     this.guts.visible =
-      (this.currentProject.lidOpen || this.currentProject.cuts.length > 0) &&
-      (this.currentProject.scoops < SCOOPS_REQUIRED || this.time - this.scoopStart < 1.3);
+      this.settings.stage === 'prepare' ||
+      ((this.currentProject.lidOpen || this.currentProject.cuts.length > 0) &&
+        this.currentProject.scoops < SCOOPS_REQUIRED);
+    if (this.guts.userData.time) this.guts.userData.time.value = this.time;
     if (this.settings.rotating && !this.drawing && !this.exporting)
       this.root.rotation.y += dt * 0.26;
     this.lid.position.lerp(this.lidPosition, Math.min(1, dt * 6));
@@ -770,18 +840,32 @@ export class StudioEngine {
     if (this.scoopIndex >= 0) {
       const age = this.time - this.scoopStart,
         clump = this.guts.children[this.scoopIndex];
-      if (clump && age >= 0 && age < 1.3 && this.scoopIndex < this.currentProject.scoops) {
-        const f = age / 1.3,
-          home = clump.userData.home as THREE.Vector3;
+      if (clump && age >= 0 && age < 2 && this.scoopIndex < this.currentProject.scoops) {
+        const f = age / 2,
+          home = clump.userData.home as THREE.Vector3,
+          pile = clump.userData.pile as THREE.Vector3;
+        const travel = f * f * (3 - 2 * f);
         clump.visible = true;
-        clump.position.set(
-          home.x - f * 1.8,
-          home.y + Math.sin(f * Math.PI) * 1.5 - f * 0.7,
-          home.z + f * 0.5,
+        clump.position.copy(home).lerp(pile, travel);
+        clump.position.y += Math.sin(f * Math.PI) * 1.35;
+        const settle = THREE.MathUtils.smoothstep(f, 0.65, 1);
+        clump.scale.set(
+          1 - settle * 0.45,
+          (1 + Math.sin(f * Math.PI) * 0.85) * (1 - settle * 0.7),
+          1 - settle * 0.45,
         );
-        clump.scale.set(1, 1 + Math.sin(f * Math.PI) * 0.5, 1);
-        clump.rotation.z = -f;
-      } else if (age >= 1.3 && !this.drawing) {
+        clump.rotation.z = -0.2 * f;
+        const drips = clump.getObjectByName('drips');
+        if (drips) {
+          drips.visible = f > 0.12 && f < 0.85;
+          drips.children.forEach((drop) => {
+            const phase = (f * 2.5 + drop.userData.phase) % 1;
+            drop.position.copy(drop.userData.start);
+            drop.position.y -= phase * phase * 0.6;
+            drop.scale.y = 1.4 + phase * 2;
+          });
+        }
+      } else if (age >= 2 && !this.drawing) {
         this.updateGuts();
         this.scoopIndex = -1;
       }
@@ -822,6 +906,7 @@ export class StudioEngine {
       scoops: this.currentProject.scoops,
       cuts: this.currentProject.cuts.length,
       strokes: this.currentProject.strokes.length,
+      engravings: this.currentProject.engravings?.length || 0,
       light: this.currentProject.light,
       environment: this.environment,
       rotating: this.settings.rotating,

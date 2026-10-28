@@ -97,6 +97,43 @@ export function ToolIllustration({ tool }: { tool: Tool }) {
         </linearGradient>
       </defs>
       <g transform="rotate(24 30 34)">
+        {['saw', 'drill', 'gouge', 'scraper'].includes(tool) && (
+          <>
+            <rect x="24" y="38" width="12" height="26" rx="4" fill={`url(#${id}wood)`} />
+            <rect x="24" y="35" width="12" height="5" rx="1" fill={`url(#${id}metal)`} />
+            {tool === 'saw' && (
+              <path
+                d="M26 36V5l5-3 1 4 5 2-5 2 5 2-5 2 5 2-5 2 5 2-5 2 5 2-5 2 5 2-5 2 5 2-5 2v4Z"
+                fill={`url(#${id}metal)`}
+                stroke="#89969a"
+                strokeWidth=".4"
+              />
+            )}
+            {tool === 'drill' && (
+              <>
+                <path d="m27 34 1-26 2-5 3 5v26Z" fill={`url(#${id}metal)`} />
+                <path
+                  d="m27 11 6 3m-6 2 6 3m-6 2 6 3m-6 2 6 3m-6 2 6 3"
+                  stroke="#515f65"
+                  strokeWidth="1.6"
+                />
+                <rect x="25" y="30" width="10" height="7" rx="2" fill={`url(#${id}metal)`} />
+              </>
+            )}
+            {tool === 'gouge' && (
+              <>
+                <path d="M28 36V20l-8-6V5l10 6L40 5v9l-8 6v16Z" fill={`url(#${id}metal)`} />
+                <path d="M30 11v10m-10-7 10 7 10-7" stroke="#647379" strokeWidth=".8" />
+              </>
+            )}
+            {tool === 'scraper' && (
+              <>
+                <path d="M28 36V28L15 17V5q15-4 30 0v12L32 28v8Z" fill={`url(#${id}metal)`} />
+                <path d="M15 7q15-4 30 0" fill="none" stroke="#f4f6f2" strokeWidth="1.3" />
+              </>
+            )}
+          </>
+        )}
         {['knife', 'cut'].includes(tool) && (
           <>
             <path

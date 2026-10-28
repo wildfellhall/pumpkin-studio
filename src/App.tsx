@@ -11,7 +11,6 @@ import {
   Film,
   FolderOpen,
   Hand,
-  Leaf,
   Lightbulb,
   LoaderCircle,
   Moon,
@@ -53,9 +52,9 @@ const STORAGE_KEY = 'hollow-pumpkin-v1';
 const GALLERY_KEY = 'hollow-gallery-v1';
 const STAGES: { id: Stage; title: string; short: string }[] = [
   { id: 'pick', title: 'Pick a pumpkin', short: 'Pick' },
-  { id: 'prepare', title: 'Scoop it out', short: 'Scoop' },
-  { id: 'carve', title: 'Make your mark', short: 'Carve' },
-  { id: 'light', title: 'Light it up', short: 'Light' },
+  { id: 'prepare', title: 'Prepare', short: 'Prep' },
+  { id: 'carve', title: 'Carve & paint', short: 'Carve' },
+  { id: 'light', title: 'Lighting', short: 'Light' },
 ];
 const TOOLS: { id: Tool; label: string; tip: string }[] = [
   { id: 'knife', label: 'Lid knife', tip: 'Click your pumpkin to cut and lift the lid.' },
@@ -69,6 +68,18 @@ const TOOLS: { id: Tool; label: string; tip: string }[] = [
     id: 'stamp',
     label: 'Cutters',
     tip: 'Choose a shape, then click the pumpkin to press it through.',
+  },
+  { id: 'saw', label: 'Saw', tip: 'Drag an open path to saw a narrow slot through the rind.' },
+  { id: 'drill', label: 'Drill', tip: 'Click to bore a circular hole. Adjust diameter below.' },
+  {
+    id: 'gouge',
+    label: 'V-gouge',
+    tip: 'Drag to engrave a narrow V-shaped groove without cutting through.',
+  },
+  {
+    id: 'scraper',
+    label: 'Scraper',
+    tip: 'Drag to shave broad strips of skin and expose the flesh.',
   },
   { id: 'paint', label: 'Paint', tip: 'Drag across the pumpkin to leave textured brushstrokes.' },
   {
@@ -382,7 +393,7 @@ export default function App() {
     }
     patch({ cuts: [...project.cuts, ...templateCuts(kind)] });
     engineRef.current?.resetView();
-    notify('A little inspiration, carved in. Add your own finishing touches.');
+    notify('Template added. Undo to remove it.');
   };
   const chooseLight = (light: LightKind) => {
     patch({ light });
@@ -461,7 +472,7 @@ export default function App() {
       commit(value, 'Imported project');
       configure({ stage: value.stage, tool: 'orbit' });
       setModal(null);
-      notify('Your pumpkin is back on the workbench.');
+      notify('Project opened.');
     } catch {
       notify(
         'This file isn’t a valid Hollow project. Choose a .hollow.json file exported from the studio.',
@@ -480,14 +491,12 @@ export default function App() {
           onClick={(e) => e.preventDefault()}
         >
           <PumpkinIcon size={34} />
-          <span>
-            hollow<span className="brand-dot">.</span>
-          </span>
-          <span className="brand-description">a pumpkin carving studio</span>
+          <span>HOLLOW</span>
+          <span className="brand-description">PUMPKIN CARVING</span>
         </a>
         <nav aria-label="Main navigation">
           <button className="nav-link active" onClick={() => setModal(null)}>
-            The workshop
+            Studio
           </button>
           <button className="nav-link" onClick={() => setModal('gallery')}>
             My pumpkins <span className="count-badge">{gallery.length}</span>
@@ -499,30 +508,17 @@ export default function App() {
           >
             <CircleHelp size={19} />
           </button>
+          <button className="primary header-export" onClick={openExport}>
+            <Download size={14} /> Export
+          </button>
         </nav>
       </header>
       <main>
-        <section className="intro">
-          <div>
-            <div className="eyebrow">
-              <span className="tiny-line" /> YOUR OWN LITTLE AUTUMN RITUAL
-            </div>
-            <h1>
-              A little mess. <em>A little magic.</em>
-            </h1>
-            <p>Pick a pumpkin. Make it yours. Let it glow.</p>
-          </div>
-          <div className="season-note">
-            <Leaf size={21} strokeWidth={1.3} />
-            <span>
-              Good things take a little carving.<small>NO MESS TO CLEAN UP, THOUGH.</small>
-            </span>
-          </div>
-        </section>
         <div className="workshop-bar">
           <div className="workshop-label">
-            <span className="status-dot" /> THE WORKSHOP <span className="bar-divider" />{' '}
-            <span className="session-label">A fresh canvas, endless possibilities.</span>
+            <Scissors size={15} />
+            <h1>Carving studio</h1>
+            <span className="session-label">{shape.name}</span>
           </div>
           <div className="mode-switch" role="group" aria-label="Carving mode">
             <button
@@ -537,7 +533,7 @@ export default function App() {
               aria-pressed={settings.mode === 'freestyle'}
               onClick={() => {
                 configure({ mode: 'freestyle' });
-                notify('Your workshop, your rules. Pick any step or tool.');
+                notify('Freestyle: all tools and steps unlocked.');
               }}
             >
               Freestyle <MoveUpRight size={12} />
@@ -570,13 +566,13 @@ export default function App() {
                 {!ready && !error && (
                   <div className="loading-scene">
                     <LoaderCircle className="spin" size={25} />
-                    <span>Setting out the tools…</span>
+                    <span>Loading studio…</span>
                   </div>
                 )}
                 {error && (
                   <div className="scene-error">
                     <PumpkinIcon size={48} />
-                    <h3>A little graphics hiccup.</h3>
+                    <h3>WebGL unavailable</h3>
                     <p>{error}</p>
                     <button className="primary" onClick={() => window.location.reload()}>
                       Try again
@@ -585,7 +581,7 @@ export default function App() {
                 )}
                 <div className="scene-top">
                   <span className="scene-label">
-                    <span className="live-dot" /> YOUR PUMPKIN, IN 3D
+                    <span className="live-dot" /> LIVE VIEW
                   </span>
                   <div className="light-switch" role="group" aria-label="Scene lighting">
                     <button
@@ -649,11 +645,15 @@ export default function App() {
                           ? 'Drag up to pull out pulp'
                           : settings.tool === 'knife'
                             ? 'Click to cut the lid'
-                            : settings.tool === 'stamp'
-                              ? 'Click to press your cutter'
+                            : ['stamp', 'drill'].includes(settings.tool)
+                              ? 'Click to cut a hole'
                               : settings.tool === 'cut'
                                 ? 'Draw a loop, release to cut'
-                                : 'Drag to make your mark'}
+                                : settings.tool === 'saw'
+                                  ? 'Drag to saw a slot'
+                                  : ['gouge', 'scraper'].includes(settings.tool)
+                                    ? 'Drag to shave the rind'
+                                    : 'Drag to paint'}
                       <b>·</b>
                       {settings.tool === 'orbit' ? 'Scroll to zoom' : 'Right-drag to rotate'}
                     </span>
@@ -703,14 +703,6 @@ export default function App() {
               </div>
             </div>
             <div className="tool-shelf">
-              <div className="tool-shelf-label">
-                <span className="eyebrow">THE TOOLBOX</span>
-                <p>
-                  A little help
-                  <br />
-                  for your hands.
-                </p>
-              </div>
               <div className="shelf-tools">
                 {TOOLS.map((t) => (
                   <button
@@ -737,7 +729,7 @@ export default function App() {
                 <Plus size={13} /> Start fresh
               </button>
               <button onClick={() => setModal('help')}>
-                <CircleHelp size={13} /> A few helpful hints
+                <CircleHelp size={13} /> Controls
               </button>
             </div>
           </div>
@@ -745,18 +737,12 @@ export default function App() {
             <div className="sidebar-content">
               <div className="panel-eyebrow">
                 <span>STEP 0{stageIndex + 1}</span>
-                <span>
-                  {settings.mode === 'guided' ? 'A LITTLE GUIDANCE' : 'MAKE YOUR OWN RULES'}
-                </span>
+                <span>{settings.mode === 'guided' ? 'GUIDED' : 'FREESTYLE'}</span>
               </div>
               {settings.stage === 'pick' && (
                 <>
-                  <h2>Meet your pumpkin.</h2>
-                  <p className="panel-description">
-                    Big plans start with a good pumpkin.
-                    <br />
-                    Which one feels like you?
-                  </p>
+                  <h2>Pick your pumpkin</h2>
+                  <p className="panel-description">Select a shape. Drag to inspect it.</p>
                   <div className="shape-list">
                     {SHAPES.map((s) => (
                       <button
@@ -776,39 +762,28 @@ export default function App() {
                       </button>
                     ))}
                   </div>
-                  <div className="little-note">
-                    <Leaf size={18} />
-                    <p>
-                      A few quirks. A little character.
-                      <br />
-                      Every pumpkin is a good pumpkin.
-                    </p>
-                  </div>
                 </>
               )}
               {settings.stage === 'prepare' && (
                 <>
-                  <h2>A little messy magic.</h2>
-                  <p className="panel-description">
-                    Lift the lid, then pull out the stringy bits.
-                    <br />A clean canvas is worth the scoop.
-                  </p>
+                  <h2>Gut the pumpkin</h2>
+                  <p className="panel-description">Cut the lid, then remove the pulp and seeds.</p>
                   <div className="prep-illustration">
                     <ToolIllustration tool={project.opened ? 'scoop' : 'knife'} />
                     <div>
                       <strong>
                         {!project.opened
-                          ? 'Start at the top.'
+                          ? 'Cut the lid'
                           : project.scoops < SCOOPS_REQUIRED
-                            ? 'Get a little stuck in.'
-                            : 'Beautifully hollow.'}
+                            ? 'Remove the pulp'
+                            : 'Ready to carve'}
                       </strong>
                       <p>
                         {!project.opened
                           ? 'Use the lid knife on your pumpkin, or cut the lid below.'
                           : project.scoops < SCOOPS_REQUIRED
                             ? 'With the scoop selected, drag upward from the open pumpkin.'
-                            : 'All the pulp is out. Time to give this pumpkin a personality.'}
+                            : 'The cavity is empty. Continue to carving.'}
                       </p>
                     </div>
                   </div>
@@ -822,7 +797,7 @@ export default function App() {
                   </button>
                   <div className="scoop-progress">
                     <div>
-                      <span>THE STRINGY STUFF</span>
+                      <span>PULP REMOVED</span>
                       <strong>
                         {project.scoops} / {SCOOPS_REQUIRED} scoops
                       </strong>
@@ -832,8 +807,8 @@ export default function App() {
                     </div>
                     <p>
                       {project.scoops === SCOOPS_REQUIRED
-                        ? 'Cleaned out. Nicely done.'
-                        : 'Seeds, strings, and all the slippery bits.'}
+                        ? 'Cavity cleared.'
+                        : 'Drag upward with the scoop, or use the button.'}
                     </p>
                   </div>
                   <button
@@ -844,43 +819,30 @@ export default function App() {
                     <Hand size={16} />{' '}
                     {project.scoops === SCOOPS_REQUIRED ? 'All scooped out' : 'Pull out a scoop'}
                   </button>
-                  <div className="little-note">
-                    <Sparkles size={18} />
-                    <p>
-                      Try the view from above.
-                      <br />
-                      <button
-                        className="inline-link"
-                        onClick={() => engineRef.current?.resetView('top')}
-                      >
-                        Take a peek inside <ArrowRight size={12} />
-                      </button>
-                    </p>
-                  </div>
+                  <button
+                    className="text-action"
+                    onClick={() => engineRef.current?.resetView('top')}
+                  >
+                    View cavity from above <ArrowRight size={12} />
+                  </button>
                 </>
               )}
               {settings.stage === 'carve' && (
                 <>
-                  <h2>
-                    A face. A feeling.
-                    <br />
-                    <em>A little you.</em>
-                  </h2>
+                  <h2>Carve & paint</h2>
                   <p className="panel-description">
-                    There’s no wrong way to make a mark.
-                    <br />
-                    Your tools are just below the pumpkin.
+                    Select a tool below the canvas. Right-drag to rotate.
                   </p>
                   <div className="active-tool-card">
                     <ToolIllustration tool={settings.tool} />
                     <div>
-                      <span className="eyebrow">IN YOUR HAND</span>
+                      <span className="eyebrow">SELECTED TOOL</span>
                       <strong>
                         {TOOLS.find((t) => t.id === settings.tool)?.label || 'Rotate by hand'}
                       </strong>
                       <p>
                         {TOOLS.find((t) => t.id === settings.tool)?.tip ||
-                          'Drag to find your pumpkin’s best side.'}
+                          'Drag to rotate the pumpkin.'}
                       </p>
                     </div>
                   </div>
@@ -917,7 +879,7 @@ export default function App() {
                   )}
                   {['paint', 'marker'].includes(settings.tool) && (
                     <>
-                      <label className="field-label">A SPLASH OF COLOR</label>
+                      <label className="field-label">PIGMENT</label>
                       <div className="color-palette">
                         {COLORS.map((c) => (
                           <button
@@ -945,10 +907,25 @@ export default function App() {
                       </div>
                     </>
                   )}
-                  {['stamp', 'paint', 'marker', 'eraser'].includes(settings.tool) && (
+                  {[
+                    'stamp',
+                    'saw',
+                    'drill',
+                    'gouge',
+                    'scraper',
+                    'paint',
+                    'marker',
+                    'eraser',
+                  ].includes(settings.tool) && (
                     <div className="range-field">
                       <label htmlFor="tool-size">
-                        {settings.tool === 'stamp' ? 'Cutter size' : 'Stroke width'}
+                        {settings.tool === 'stamp'
+                          ? 'Cutter size'
+                          : settings.tool === 'drill'
+                            ? 'Hole diameter'
+                            : ['gouge', 'scraper', 'saw'].includes(settings.tool)
+                              ? 'Cut width'
+                              : 'Stroke width'}
                         <span>{settings.size}</span>
                       </label>
                       <input
@@ -960,8 +937,8 @@ export default function App() {
                         onChange={(e) => configure({ size: +e.target.value })}
                       />
                       <div className="range-ends">
-                        <span>A little detail</span>
-                        <span>A bold statement</span>
+                        <span>Fine</span>
+                        <span>Broad</span>
                       </div>
                     </div>
                   )}
@@ -971,18 +948,18 @@ export default function App() {
                     aria-expanded={templatesOpen}
                   >
                     <span>
-                      <Sparkles size={14} /> Need a little inspiration?
+                      <Sparkles size={14} /> Carving templates
                     </span>
                     <ChevronDown size={14} className={templatesOpen ? 'turned' : ''} />
                   </button>
                   {templatesOpen && (
                     <div className="template-options">
                       <button onClick={() => applyTemplate('classic')}>
-                        <span>☻</span>The classic grin
+                        <span>☻</span>Classic face
                         <Plus size={13} />
                       </button>
                       <button onClick={() => applyTemplate('cat')}>
-                        <span>♧</span>A curious cat
+                        <span>♧</span>Cat face
                         <Plus size={13} />
                       </button>
                       <button onClick={() => applyTemplate('celestial')}>
@@ -1005,44 +982,39 @@ export default function App() {
               )}
               {settings.stage === 'light' && (
                 <>
-                  <h2>
-                    Let your little
-                    <br />
-                    <em>light shine.</em>
-                  </h2>
+                  <h2>Light the lantern</h2>
                   <p className="panel-description">
-                    The finishing touch. A soft flicker,
-                    <br />a warm glow, a little autumn magic.
+                    Choose a light source and adjust its intensity.
                   </p>
-                  <label className="field-label">CHOOSE YOUR GLOW</label>
+                  <label className="field-label">LIGHT SOURCE</label>
                   <div className="light-options">
                     {(
                       [
                         {
                           id: 'tealight',
                           icon: '◉',
-                          title: 'The little tealight',
-                          text: 'Small flame, warm heart',
+                          title: 'Tealight',
+                          text: 'Low candle flame',
                         },
                         {
                           id: 'pillar',
                           icon: '▥',
-                          title: 'The wax candle',
-                          text: 'A taller, dancing flame',
+                          title: 'Pillar candle',
+                          text: 'Tall wax candle',
                         },
                         {
                           id: 'amber',
                           icon: '✦',
-                          title: 'Amber glow',
-                          text: 'A steady golden LED',
+                          title: 'Amber LED',
+                          text: 'Steady warm light',
                         },
                         {
                           id: 'violet',
                           icon: '✧',
-                          title: 'Something spellbinding',
-                          text: 'A little violet LED magic',
+                          title: 'Violet LED',
+                          text: 'Steady violet light',
                         },
-                        { id: 'none', icon: '○', title: 'Unlit', text: 'Lovely just as it is' },
+                        { id: 'none', icon: '○', title: 'Unlit', text: 'No interior light' },
                       ] as const
                     ).map((l) => (
                       <button
@@ -1064,7 +1036,7 @@ export default function App() {
                   </div>
                   <div className="range-field">
                     <label htmlFor="brightness">
-                      A little glow, or a lot
+                      Intensity
                       <span>{Math.round((project.brightness / 3) * 100)}%</span>
                     </label>
                     <input
@@ -1102,7 +1074,7 @@ export default function App() {
                       }
                     >
                       <Moon size={13} />
-                      {settings.environment === 'day' ? 'See it after dark' : 'Back to daylight'}
+                      {settings.environment === 'day' ? 'Night preview' : 'Daylight preview'}
                     </button>
                     {project.opened && (
                       <button
@@ -1120,14 +1092,11 @@ export default function App() {
               {settings.stage === 'pick' ? (
                 <>
                   <div className="selected-pumpkin">
-                    <span>YOUR PICK</span>
-                    <strong>
-                      {shape.name}
-                      <span> · {shape.label}</span>
-                    </strong>
+                    <span>SELECTED</span>
+                    <strong>{shape.name}</strong>
                   </div>
                   <button className="primary full" onClick={() => goToStage('prepare')}>
-                    This is the one <ArrowRight size={17} />
+                    Use this pumpkin <ArrowRight size={17} />
                   </button>
                 </>
               ) : settings.stage === 'prepare' ? (
@@ -1140,10 +1109,10 @@ export default function App() {
                       if (project.lidOpen) patch({ lidOpen: false, stage: 'carve' });
                     }}
                   >
-                    Let’s make a mark <ArrowRight size={17} />
+                    Start carving <ArrowRight size={17} />
                   </button>
                   <button className="back-step" onClick={() => goToStage('pick')}>
-                    <ArrowLeft size={12} /> Back to the patch
+                    <ArrowLeft size={12} /> Choose pumpkin
                   </button>
                 </>
               ) : settings.stage === 'carve' ? (
@@ -1156,16 +1125,16 @@ export default function App() {
                         patch({ light: 'tealight', lidOpen: false, stage: 'light' });
                     }}
                   >
-                    Bring it to life <Sparkles size={16} />
+                    Add lighting <Sparkles size={16} />
                   </button>
                   <button className="back-step" onClick={() => goToStage('prepare')}>
-                    <ArrowLeft size={12} /> Back to scooping
+                    <ArrowLeft size={12} /> Prepare pumpkin
                   </button>
                 </>
               ) : (
                 <>
                   <button className="primary full" onClick={openExport}>
-                    <Film size={16} /> Keep a little magic <ArrowRight size={16} />
+                    <Film size={16} /> Export pumpkin <ArrowRight size={16} />
                   </button>
                   <button className="back-step" onClick={saveToGallery}>
                     <Save size={13} /> Save to My pumpkins
@@ -1175,28 +1144,7 @@ export default function App() {
             </div>
           </aside>
         </div>
-        <section className="under-workshop">
-          <div>
-            <Sparkles size={17} />
-            <p>A small tradition. An entirely new canvas.</p>
-          </div>
-          <button onClick={openExport}>
-            Made something you love?{' '}
-            <span>
-              Take it with you <ArrowUpRightIcon />
-            </span>
-          </button>
-        </section>
       </main>
-      <footer className="site-footer">
-        <span>
-          <PumpkinIcon size={18} /> A little hollow. A whole lot of heart.
-        </span>
-        <span>MADE FOR THE JOY OF MAKING.</span>
-        <button onClick={() => setModal('help')}>
-          Stay curious. Get carving. <Leaf size={13} />
-        </button>
-      </footer>
       <input
         ref={importRef}
         type="file"
@@ -1217,27 +1165,27 @@ export default function App() {
       )}
 
       {modal === 'help' && (
-        <Modal title="A little help for your hands." onClose={closeModal}>
-          <p className="modal-intro">A quiet corner to make something entirely yours.</p>
+        <Modal title="Studio controls" onClose={closeModal}>
+          <p className="modal-intro">Carve, decorate, and export a rotating lantern.</p>
           <div className="help-steps">
             {[
               {
-                title: 'Find your pumpkin.',
+                title: 'Choose a pumpkin',
                 text: 'Pick from five shapes and colors. Drag the pumpkin to see every side; scroll to get closer.',
                 icon: <PumpkinIcon size={24} />,
               },
               {
-                title: 'Make a little mess.',
+                title: 'Prepare the cavity',
                 text: 'Cut and lift the lid. Use the scoop and drag upward to pull out six clumps of slippery pulp and seeds.',
                 icon: <Scissors size={21} />,
               },
               {
-                title: 'Give it a little personality.',
+                title: 'Carve and decorate',
                 text: 'Draw a loop with Carve and release to make a real opening. Press in cutters, brush on paint, or sketch with a marker. Right-drag to rotate while using a tool.',
                 icon: <Sparkles size={22} />,
               },
               {
-                title: 'Let it glow.',
+                title: 'Light and export',
                 text: 'Choose a candle or LED, try the night preview, and download a full rotating video or a still image.',
                 icon: <Lightbulb size={22} />,
               },
@@ -1254,7 +1202,7 @@ export default function App() {
             ))}
           </div>
           <div className="help-note">
-            <strong>Your pace. Your process.</strong>
+            <strong>Guided or Freestyle</strong>
             <p>
               Guided takes you through each step. Freestyle lets you choose any tool in any order.
               Your current pumpkin saves on this device. Download a project file to keep an editable
@@ -1273,13 +1221,13 @@ export default function App() {
             </span>
           </div>
           <button className="primary full" onClick={closeModal}>
-            Back to the good stuff <ArrowRight size={16} />
+            Return to studio <ArrowRight size={16} />
           </button>
         </Modal>
       )}
       {modal === 'export' && (
-        <Modal title="Keep a little magic." onClose={closeModal}>
-          <p className="modal-intro">A full turn around your one-of-a-kind creation.</p>
+        <Modal title="Export pumpkin." onClose={closeModal}>
+          <p className="modal-intro">Download a full rotation in daylight or at night.</p>
           <div className="export-preview">
             <PumpkinThumbnail shape={project.shape} />
             <div>
@@ -1292,7 +1240,7 @@ export default function App() {
           </div>
           <div className="export-fields">
             <label className="field-label" htmlFor="project-name">
-              GIVE IT A NAME
+              PROJECT NAME
             </label>
             <input
               className="text-input"
@@ -1302,7 +1250,7 @@ export default function App() {
               disabled={recording}
               onChange={(e) => setProject((p) => ({ ...p, name: e.target.value }))}
             />
-            <span className="field-label">THE LIGHTING</span>
+            <span className="field-label">LIGHTING</span>
             <div className="export-light">
               <button
                 disabled={recording}
@@ -1311,8 +1259,8 @@ export default function App() {
                 onClick={() => setExportEnv('day')}
               >
                 <Sun size={19} />
-                <strong>Golden daylight</strong>
-                <small>Every little detail</small>
+                <strong>Daylight</strong>
+                <small>Neutral work light</small>
               </button>
               <button
                 disabled={recording}
@@ -1321,8 +1269,8 @@ export default function App() {
                 onClick={() => setExportEnv('night')}
               >
                 <Moon size={18} />
-                <strong>After dark</strong>
-                <small>Let that glow shine</small>
+                <strong>Night</strong>
+                <small>Candlelight & shadows</small>
               </button>
             </div>
             <div className="export-selects">
@@ -1339,7 +1287,7 @@ export default function App() {
                 </select>
               </label>
               <label>
-                A little more detail
+                Resolution
                 <select
                   disabled={recording}
                   value={quality}
@@ -1361,14 +1309,14 @@ export default function App() {
               <div>
                 <span>
                   <span className="record-dot" />
-                  Making your film…
+                  Recording…
                 </span>
                 <strong>{Math.round(progress * 100)}%</strong>
               </div>
               <div className="progress-track">
                 <div style={{ width: `${progress * 100}%` }} />
               </div>
-              <p>Keep this tab in view while your pumpkin takes a turn.</p>
+              <p>Keep this tab visible until recording finishes.</p>
               <button className="text-action" onClick={() => engineRef.current?.cancelExport()}>
                 Cancel recording
               </button>
@@ -1404,9 +1352,9 @@ export default function App() {
         </Modal>
       )}
       {modal === 'gallery' && (
-        <Modal title="Your little pumpkin patch." onClose={closeModal} wide>
+        <Modal title="Saved pumpkins" onClose={closeModal} wide>
           <p className="modal-intro">
-            A few things you’ve made. A little magic worth keeping.
+            Your saved projects on this device.
             <br />
             <small>Saved on this device. Keep project files for a lasting copy.</small>
           </p>
@@ -1421,8 +1369,8 @@ export default function App() {
           {!gallery.length ? (
             <div className="empty-gallery">
               <PumpkinIcon size={60} />
-              <h3>A patch full of possibilities.</h3>
-              <p>Your saved pumpkins will grow here.</p>
+              <h3>No saved pumpkins</h3>
+              <p>Save your current pumpkin or open a project file.</p>
             </div>
           ) : (
             <div className="gallery-grid">
@@ -1452,10 +1400,9 @@ export default function App() {
         </Modal>
       )}
       {modal === 'new' && (
-        <Modal title="A fresh little beginning." onClose={closeModal}>
+        <Modal title="New pumpkin" onClose={closeModal}>
           <p className="modal-intro">
-            Start with a new pumpkin. You can undo this, or tuck your current creation into My
-            pumpkins first.
+            Start a new pumpkin. You can undo this action or save the current project first.
           </p>
           <div className="new-pumpkin">
             <PumpkinThumbnail shape="classic" />
@@ -1467,10 +1414,10 @@ export default function App() {
               configure({ ...DEFAULT_SETTINGS });
               engineRef.current?.resetView();
               setModal(null);
-              notify('A fresh pumpkin, just for you.');
+              notify('New pumpkin created.');
             }}
           >
-            Back to the pumpkin patch <ArrowRight size={16} />
+            Create new pumpkin <ArrowRight size={16} />
           </button>
           <button
             className="secondary full spaced"
@@ -1485,10 +1432,6 @@ export default function App() {
       )}
     </div>
   );
-}
-
-function ArrowUpRightIcon() {
-  return <MoveUpRight size={13} />;
 }
 
 declare global {

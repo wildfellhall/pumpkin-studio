@@ -58,6 +58,42 @@ export function unionCuts(cuts: UV[][]): MultiPolygon {
   ]);
 }
 
+/** Sweep a round saw kerf along an open gesture, unioning joins to avoid internal walls. */
+export function sawCuts(points: UV[], size: number): UV[][] {
+  if (!points.length) return [];
+  const radius = size / 6000;
+  const capsules: MultiPolygon[] = [];
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i];
+    const circle: UV[] = Array.from({ length: 16 }, (_, j) => [
+      a[0] + Math.cos((j / 16) * TAU) * radius,
+      a[1] + Math.sin((j / 16) * TAU) * radius * 2.2,
+    ]);
+    capsules.push([[closed(circle)]]);
+    if (i === 0) continue;
+    const b = points[i - 1],
+      dx = a[0] - b[0],
+      dy = (a[1] - b[1]) / 2.2;
+    const length = Math.hypot(dx, dy);
+    if (length < 1e-8) continue;
+    const nx = (-dy / length) * radius,
+      ny = (dx / length) * radius * 2.2;
+    capsules.push([
+      [
+        closed([
+          [b[0] + nx, b[1] + ny],
+          [a[0] + nx, a[1] + ny],
+          [a[0] - nx, a[1] - ny],
+          [b[0] - nx, b[1] - ny],
+        ]),
+      ],
+    ]);
+  }
+  return polygonClipping
+    .union(capsules[0], ...capsules.slice(1))
+    .map((p) => p[0].slice(0, -1) as UV[]);
+}
+
 /** Clip tessellated UV triangles before mapping into 3D; holes remain real geometry at every viewing angle. */
 export function buildShell(
   shape: PumpkinShape,
